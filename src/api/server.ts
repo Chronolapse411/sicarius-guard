@@ -1,0 +1,459 @@
+/**
+ * SicariusGuard — Express REST API Server
+ *
+ * Endpoints:
+ *   POST /v1/check          — full token safety analysis
+ *   POST /v1/honeypot       — honeypot-only check (Jupiter sell sim)
+ *   POST /v1/holders        — holder concentration analysis
+ *   GET  /v1/check/:mint    — convenience GET for simple checks
+ *   GET  /health            — health check
+ *
+ * @author Chronolapse411
+ */
+
+import express from 'express';
+import cors from 'cors';
+import { Connection } from '@solana/web3.js';
+import { analyzeTokenSafety, type SafetyResult } from '../core/token_safety.js';
+import { checkHoneypot, type HoneypotResult } from '../core/honeypot_sim.js';
+import { analyzeHolders, type HolderResult } from '../core/holder_analysis.js';
+import { authMiddleware, cleanupRateLimits } from './auth.js';
+import { ResultCache } from './cache.js';
+import { enrichWithBirdeye, type BirdeyeEnrichment } from '../core/birdeye.js';
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+interface FullCheckResult {
+    safety:   SafetyResult;
+    honeypot: HoneypotResult;
+    holders:  HolderResult;
+    combined: {
+        safe:      boolean;
+        riskScore: number;
+        verdict:   string;
+        summary:   string;
+    };
+}
+
+interface FullScanResult {
+    safety:    SafetyResult;
+    honeypot:  HoneypotResult;
+    holders:   HolderResult;
+    birdeye:   BirdeyeEnrichment;
+    combined:  {
+        safe:           boolean;
+        riskScore:      number;
+        marketRiskScore: number;
+        finalScore:     number;
+        verdict:        string;
+        summary:        string;
+    };
+}
+
+// ── Server Setup ─────────────────────────────────────────────────────────────
+
+const RPC_URL   = process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com';
+const PORT      = parseInt(process.env.PORT || '3400', 10);
+const HOST      = process.env.HOST || '0.0.0.0';
+const CACHE_TTL = parseInt(process.env.CACHE_TTL_SECONDS || '300', 10);
+
+// Solana connection with finalized commitment for safety-critical reads
+const connection = new Connection(RPC_URL, 'finalized');
+
+// Result caches
+const safetyCache   = new ResultCache<SafetyResult>(CACHE_TTL);
+const honeypotCache = new ResultCache<HoneypotResult>(CACHE_TTL);
+const holderCache   = new ResultCache<HolderResult>(CACHE_TTL);
+const fullCache     = new ResultCache<FullCheckResult>(CACHE_TTL);
+const scanCache     = new ResultCache<FullScanResult>(CACHE_TTL);
+
+const BIRDEYE_API_KEY = process.env.BIRDEYE_API_KEY || '';
+
+// Solana address validation (base58, 32-44 chars)
+const MINT_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
+function isValidMint(mint: unknown): mint is string {
+    return typeof mint === 'string' && MINT_REGEX.test(mint);
+}
+
+// ── Express App ──────────────────────────────────────────────────────────────
+
+export function createApp(): express.Express {
+    const app = express();
+
+    app.use(cors());
+    app.use(express.json({ limit: '1mb' }));
+
+    // Health check (no auth)
+    app.get('/health', (_req, res) => {
+        res.json({
+            status: 'ok',
+            service: 'sicarius-guard',
+            version: '1.0.0',
+            uptime: process.uptime(),
+            cacheSize: {
+                safety: safetyCache.size(),
+                honeypot: honeypotCache.size(),
+                holders: holderCache.size(),
+                full: fullCache.size(),
+            },
+        });
+    });
+
+    // All /v1/* endpoints require auth
+    app.use('/v1', authMiddleware);
+
+    // ── POST /v1/check — Full analysis ───────────────────────────────────────
+    app.post('/v1/check', async (req, res) => {
+        try {
+            const { mint, txSignature, isPumpSwap } = req.body as {
+                mint?: unknown;
+                txSignature?: string;
+                isPumpSwap?: boolean;
+            };
+
+            if (!isValidMint(mint)) {
+                res.status(400).json({ error: 'Invalid mint address', message: 'Provide a valid Solana mint address' });
+                return;
+            }
+
+            // Check cache
+            const cached = fullCache.get(mint);
+            if (cached) {
+                res.json({ ...cached, cached: true });
+                return;
+            }
+
+            // Fetch tx if signature provided
+            let txInfo: unknown = undefined;
+            if (txSignature) {
+                try {
+                    txInfo = await connection.getParsedTransaction(txSignature, {
+                        maxSupportedTransactionVersion: 0,
+                    });
+                } catch { /* best-effort */ }
+            }
+
+            // Run all checks in parallel
+            const [safety, honeypot, holders] = await Promise.all([
+                analyzeTokenSafety(connection, mint, txInfo, isPumpSwap ?? false),
+                checkHoneypot(mint),
+                analyzeHolders(connection, mint),
+            ]);
+
+            // Combine scores
+            let combinedScore = safety.riskScore;
+            if (honeypot.isHoneypot) combinedScore = Math.min(combinedScore + 30, 100);
+            if (holders.concentrated) combinedScore = Math.min(combinedScore + 15, 100);
+
+            const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated;
+            const verdict = combinedScore === 0 ? 'SAFE'
+                : combinedScore <= 15 ? 'CAUTION'
+                : combinedScore <= 50 ? 'HIGH_RISK'
+                : 'CRITICAL';
+
+            const summaryParts: string[] = [];
+            if (!safety.safe) summaryParts.push(safety.reason);
+            if (honeypot.isHoneypot) summaryParts.push('Honeypot detected');
+            if (holders.concentrated) summaryParts.push(holders.reason);
+
+            const result: FullCheckResult = {
+                safety,
+                honeypot,
+                holders,
+                combined: {
+                    safe: combinedSafe,
+                    riskScore: combinedScore,
+                    verdict,
+                    summary: combinedSafe ? 'All checks passed' : summaryParts.join('; '),
+                },
+            };
+
+            fullCache.set(mint, result);
+            res.json({ ...result, cached: false });
+
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error('[API] /v1/check error:', msg);
+            res.status(500).json({ error: 'Internal server error', message: msg });
+        }
+    });
+
+    // ── GET /v1/check/:mint — Convenience GET ────────────────────────────────
+    app.get('/v1/check/:mint', async (req, res) => {
+        const { mint } = req.params;
+
+        if (!isValidMint(mint)) {
+            res.status(400).json({ error: 'Invalid mint address' });
+            return;
+        }
+
+        // Check cache
+        const cached = fullCache.get(mint);
+        if (cached) {
+            res.json({ ...cached, cached: true });
+            return;
+        }
+
+        const [safety, honeypot, holders] = await Promise.all([
+            analyzeTokenSafety(connection, mint),
+            checkHoneypot(mint),
+            analyzeHolders(connection, mint),
+        ]);
+
+        let combinedScore = safety.riskScore;
+        if (honeypot.isHoneypot) combinedScore = Math.min(combinedScore + 30, 100);
+        if (holders.concentrated) combinedScore = Math.min(combinedScore + 15, 100);
+
+        const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated;
+        const verdict = combinedScore === 0 ? 'SAFE'
+            : combinedScore <= 15 ? 'CAUTION'
+            : combinedScore <= 50 ? 'HIGH_RISK'
+            : 'CRITICAL';
+
+        const result: FullCheckResult = {
+            safety,
+            honeypot,
+            holders,
+            combined: {
+                safe: combinedSafe,
+                riskScore: combinedScore,
+                verdict,
+                summary: combinedSafe ? 'All checks passed' : [
+                    !safety.safe ? safety.reason : '',
+                    honeypot.isHoneypot ? 'Honeypot detected' : '',
+                    holders.concentrated ? holders.reason : '',
+                ].filter(Boolean).join('; '),
+            },
+        };
+
+        fullCache.set(mint, result);
+        res.json({ ...result, cached: false });
+    });
+
+    // ── POST /v1/honeypot — Honeypot-only check ──────────────────────────────
+    app.post('/v1/honeypot', async (req, res) => {
+        try {
+            const { mint, amount } = req.body as { mint?: unknown; amount?: string };
+
+            if (!isValidMint(mint)) {
+                res.status(400).json({ error: 'Invalid mint address' });
+                return;
+            }
+
+            const cached = honeypotCache.get(mint);
+            if (cached) {
+                res.json({ ...cached, cached: true });
+                return;
+            }
+
+            const result = await checkHoneypot(mint, amount);
+            honeypotCache.set(mint, result);
+            res.json({ ...result, cached: false });
+
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            res.status(500).json({ error: 'Internal server error', message: msg });
+        }
+    });
+
+    // ── POST /v1/holders — Holder concentration check ────────────────────────
+    app.post('/v1/holders', async (req, res) => {
+        try {
+            const { mint } = req.body as { mint?: unknown };
+
+            if (!isValidMint(mint)) {
+                res.status(400).json({ error: 'Invalid mint address' });
+                return;
+            }
+
+            const cached = holderCache.get(mint);
+            if (cached) {
+                res.json({ ...cached, cached: true });
+                return;
+            }
+
+            const result = await analyzeHolders(connection, mint);
+            holderCache.set(mint, result);
+            res.json({ ...result, cached: false });
+
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            res.status(500).json({ error: 'Internal server error', message: msg });
+        }
+    });
+
+    // ── POST /v1/scan — Full analysis + Birdeye enrichment ────────────────────
+    app.post('/v1/scan', async (req, res) => {
+        try {
+            const { mint, txSignature, isPumpSwap } = req.body as {
+                mint?: unknown;
+                txSignature?: string;
+                isPumpSwap?: boolean;
+            };
+
+            if (!isValidMint(mint)) {
+                res.status(400).json({ error: 'Invalid mint address' });
+                return;
+            }
+
+            // Check cache
+            const cached = scanCache.get(mint);
+            if (cached) {
+                res.json({ ...cached, cached: true });
+                return;
+            }
+
+            // Fetch tx if provided
+            let txInfo: unknown = undefined;
+            if (txSignature) {
+                try {
+                    txInfo = await connection.getParsedTransaction(txSignature, {
+                        maxSupportedTransactionVersion: 0,
+                    });
+                } catch { /* best-effort */ }
+            }
+
+            // Run ALL checks in parallel — on-chain + Birdeye
+            const [safety, honeypot, holders, birdeye] = await Promise.all([
+                analyzeTokenSafety(connection, mint, txInfo, isPumpSwap ?? false),
+                checkHoneypot(mint),
+                analyzeHolders(connection, mint),
+                enrichWithBirdeye(mint, BIRDEYE_API_KEY),
+            ]);
+
+            // Combine on-chain score
+            let onChainScore = safety.riskScore;
+            if (honeypot.isHoneypot) onChainScore = Math.min(onChainScore + 30, 100);
+            if (holders.concentrated) onChainScore = Math.min(onChainScore + 15, 100);
+
+            // Weighted final score: 70% on-chain, 30% market data
+            const marketScore = birdeye.marketRisk.score;
+            const finalScore = Math.round(onChainScore * 0.7 + marketScore * 0.3);
+
+            const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated && marketScore < 30;
+
+            const verdict = finalScore === 0 ? 'SAFE'
+                : finalScore <= 15 ? 'CAUTION'
+                : finalScore <= 50 ? 'HIGH_RISK'
+                : 'CRITICAL';
+
+            const summaryParts: string[] = [];
+            if (!safety.safe) summaryParts.push(safety.reason);
+            if (honeypot.isHoneypot) summaryParts.push('Honeypot detected');
+            if (holders.concentrated) summaryParts.push(holders.reason);
+            if (birdeye.marketRisk.flags.length > 0) {
+                summaryParts.push(`Market flags: ${birdeye.marketRisk.flags.join(', ')}`);
+            }
+
+            const result: FullScanResult = {
+                safety,
+                honeypot,
+                holders,
+                birdeye,
+                combined: {
+                    safe: combinedSafe,
+                    riskScore: onChainScore,
+                    marketRiskScore: marketScore,
+                    finalScore,
+                    verdict,
+                    summary: combinedSafe ? 'All checks passed — token appears safe' : summaryParts.join('; '),
+                },
+            };
+
+            scanCache.set(mint, result);
+            res.json({ ...result, cached: false });
+
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            console.error('[API] /v1/scan error:', msg);
+            res.status(500).json({ error: 'Internal server error', message: msg });
+        }
+    });
+
+    // ── GET /v1/scan/:mint — Convenience GET for scan ────────────────────────
+    app.get('/v1/scan/:mint', async (req, res) => {
+        const { mint } = req.params;
+
+        if (!isValidMint(mint)) {
+            res.status(400).json({ error: 'Invalid mint address' });
+            return;
+        }
+
+        const cached = scanCache.get(mint);
+        if (cached) {
+            res.json({ ...cached, cached: true });
+            return;
+        }
+
+        const [safety, honeypot, holders, birdeye] = await Promise.all([
+            analyzeTokenSafety(connection, mint),
+            checkHoneypot(mint),
+            analyzeHolders(connection, mint),
+            enrichWithBirdeye(mint, BIRDEYE_API_KEY),
+        ]);
+
+        let onChainScore = safety.riskScore;
+        if (honeypot.isHoneypot) onChainScore = Math.min(onChainScore + 30, 100);
+        if (holders.concentrated) onChainScore = Math.min(onChainScore + 15, 100);
+
+        const marketScore = birdeye.marketRisk.score;
+        const finalScore = Math.round(onChainScore * 0.7 + marketScore * 0.3);
+        const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated && marketScore < 30;
+
+        const verdict = finalScore === 0 ? 'SAFE'
+            : finalScore <= 15 ? 'CAUTION'
+            : finalScore <= 50 ? 'HIGH_RISK'
+            : 'CRITICAL';
+
+        const result: FullScanResult = {
+            safety,
+            honeypot,
+            holders,
+            birdeye,
+            combined: {
+                safe: combinedSafe,
+                riskScore: onChainScore,
+                marketRiskScore: marketScore,
+                finalScore,
+                verdict,
+                summary: combinedSafe ? 'All checks passed — token appears safe' : [
+                    !safety.safe ? safety.reason : '',
+                    honeypot.isHoneypot ? 'Honeypot detected' : '',
+                    holders.concentrated ? holders.reason : '',
+                    birdeye.marketRisk.flags.length > 0 ? `Market: ${birdeye.marketRisk.flags.join(', ')}` : '',
+                ].filter(Boolean).join('; '),
+            },
+        };
+
+        scanCache.set(mint, result);
+        res.json({ ...result, cached: false });
+    });
+
+    return app;
+}
+
+// ── Start Server ─────────────────────────────────────────────────────────────
+
+export function startServer(): void {
+    const app = createApp();
+
+    // Periodic cleanup of rate limit entries
+    setInterval(cleanupRateLimits, 60_000);
+
+    app.listen(PORT, HOST, () => {
+        console.log(`
+╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║   🛡️  SicariusGuard — Token Safety API                   ║
+║                                                          ║
+║   Server:    http://${HOST}:${PORT}                       ║
+║   Health:    http://${HOST}:${PORT}/health                ║
+║   Docs:      POST /v1/check  { "mint": "..." }           ║
+║   RPC:       ${RPC_URL.slice(0, 45)}...                  ║
+║   Cache TTL: ${CACHE_TTL}s                               ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+        `.trim());
+    });
+}
