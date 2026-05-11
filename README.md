@@ -63,6 +63,8 @@ npm start
 | `GET` | `/v1/scan/:mint` | Convenience GET for enriched scan |
 | `POST` | `/v1/honeypot` | Honeypot-only check (Jupiter sell sim) |
 | `POST` | `/v1/holders` | Holder concentration analysis |
+| `GET` | `/v1/pricing` | x402 payment pricing table |
+| `GET` | `/x402/stats` | Payment verification stats |
 | `GET` | `/health` | Service health check |
 
 ### Example Request
@@ -155,8 +157,8 @@ if (!result.safe) {
 │                    SicariusGuard                         │
 │                                                         │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │
-│  │ REST API    │  │ MCP Server  │  │ (Future: x402)  │ │
-│  │ Express     │  │ stdio       │  │ Micropayments   │ │
+│  │ REST API    │  │ MCP Server  │  │ x402 Payment    │ │
+│  │ Express     │  │ stdio       │  │ SOL Micropay    │ │
 │  └──────┬──────┘  └──────┬──────┘  └────────┬────────┘ │
 │         │                │                   │          │
 │  ┌──────▼────────────────▼───────────────────▼────────┐ │
@@ -182,6 +184,52 @@ if (!result.safe) {
 └─────────────────────────────────────────────────────────┘
 ```
 
+## 💰 x402 Payment Protocol
+
+SicariusGuard implements the **x402 HTTP Payment Required** protocol for machine-native micropayments. AI agents can pay per API call with SOL — no registration, no API keys, no accounts.
+
+### How It Works
+
+```
+1. Agent hits /v1/scan → gets 402 + payment instructions
+2. Agent sends SOL to treasury wallet
+3. Agent retries with X-PAYMENT: <tx_signature>
+4. Server verifies on-chain → returns safety data
+```
+
+### Pricing
+
+| Endpoint | Price (SOL) | ~USD |
+|----------|------------|------|
+| `/v1/check` | 0.001 | $0.15 |
+| `/v1/scan` | 0.002 | $0.30 |
+| `/v1/honeypot` | 0.0005 | $0.07 |
+| `/v1/holders` | 0.0005 | $0.07 |
+
+### Example (Paid Request)
+
+```bash
+# Step 1: Get pricing
+curl http://localhost:3400/v1/pricing
+
+# Step 2: Send SOL to treasury (via any wallet/CLI)
+solana transfer 5QMsfrUcaJ8WgD98MD8NJ3aEHvYz443QqFEJqGXbyLFM 0.002
+
+# Step 3: Use tx signature as payment proof
+curl -X POST http://localhost:3400/v1/scan \
+  -H "Content-Type: application/json" \
+  -H "X-PAYMENT: <your_tx_signature>" \
+  -d '{"mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"}'
+```
+
+### Access Tiers
+
+| Tier | Auth Method | Rate Limit |
+|------|------------|------------|
+| **Free** | None | 100 calls/day per IP |
+| **API Key** | `x-api-key` header | Unlimited |
+| **x402 Pay-Per-Call** | `X-PAYMENT` header (SOL tx sig) | Unlimited |
+
 ## 🔧 Configuration
 
 | Variable | Description | Default |
@@ -190,6 +238,7 @@ if (!result.safe) {
 | `PORT` | API server port | `3400` |
 | `HOST` | Bind address | `0.0.0.0` |
 | `BIRDEYE_API_KEY` | Birdeye API key (optional) | — |
+| `TREASURY_WALLET` | SOL payment recipient | `5QMsfrU...LFM` |
 | `CACHE_TTL_SECONDS` | Cache duration | `300` |
 | `FREE_TIER_CALLS_PER_DAY` | Rate limit | `100` |
 
@@ -212,6 +261,7 @@ Most token safety tools rely on third-party APIs that can be gamed. SicariusGuar
 | Token-2022 extension scanning | ✅ | ❌ | Partial |
 | Jupiter honeypot simulation | ✅ | ❌ | ❌ |
 | MCP server for AI agents | ✅ | ❌ | ❌ |
+| x402 pay-per-call (SOL) | ✅ | ❌ | ❌ |
 | Self-hosted (no vendor lock-in) | ✅ | ❌ | ❌ |
 | Birdeye market enrichment | ✅ | ❌ | ❌ |
 | Sub-2s response time | ✅ | ✅ | ✅ |

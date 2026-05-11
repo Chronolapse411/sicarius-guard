@@ -20,6 +20,7 @@ import { analyzeHolders, type HolderResult } from '../core/holder_analysis.js';
 import { authMiddleware, cleanupRateLimits } from './auth.js';
 import { ResultCache } from './cache.js';
 import { enrichWithBirdeye, type BirdeyeEnrichment } from '../core/birdeye.js';
+import { x402PaymentMiddleware, cleanupPaymentCache, getPricing, getPaymentStats } from './x402.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,8 +101,29 @@ export function createApp(): express.Express {
         });
     });
 
-    // All /v1/* endpoints require auth
+    // Payment stats endpoint (no auth)
+    app.get('/x402/stats', (_req, res) => {
+        res.json({
+            protocol: 'x402',
+            ...getPaymentStats(),
+            pricing: getPricing(),
+        });
+    });
+
+    // All /v1/* endpoints: try API key auth first, then x402 payment
     app.use('/v1', authMiddleware);
+    app.use('/v1', x402PaymentMiddleware);
+
+    // Pricing endpoint (no auth required)
+    app.get('/v1/pricing', (_req, res) => {
+        res.json({
+            protocol: 'x402',
+            network: 'solana',
+            currency: 'SOL',
+            pricing: getPricing(),
+            instructions: 'Send SOL to the recipient address, then include the tx signature in the X-PAYMENT header. Or use a free API key via x-api-key header.',
+        });
+    });
 
     // ── POST /v1/check — Full analysis ───────────────────────────────────────
     app.post('/v1/check', async (req, res) => {
@@ -438,8 +460,9 @@ export function createApp(): express.Express {
 export function startServer(): void {
     const app = createApp();
 
-    // Periodic cleanup of rate limit entries
+    // Periodic cleanup of rate limit entries + payment cache
     setInterval(cleanupRateLimits, 60_000);
+    setInterval(cleanupPaymentCache, 120_000);
 
     app.listen(PORT, HOST, () => {
         console.log(`
@@ -449,7 +472,10 @@ export function startServer(): void {
 ║                                                          ║
 ║   Server:    http://${HOST}:${PORT}                       ║
 ║   Health:    http://${HOST}:${PORT}/health                ║
+║   Pricing:   http://${HOST}:${PORT}/v1/pricing           ║
+║   x402:      http://${HOST}:${PORT}/x402/stats           ║
 ║   Docs:      POST /v1/check  { "mint": "..." }           ║
+║   Payment:   x402 SOL → ${process.env.TREASURY_WALLET?.slice(0, 20) ?? 'not set'}...   ║
 ║   RPC:       ${RPC_URL.slice(0, 45)}...                  ║
 ║   Cache TTL: ${CACHE_TTL}s                               ║
 ║                                                          ║
@@ -457,3 +483,4 @@ export function startServer(): void {
         `.trim());
     });
 }
+

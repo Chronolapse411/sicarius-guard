@@ -72,13 +72,22 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     entry.count++;
 
     if (entry.count > FREE_TIER_LIMIT) {
+        // Check if client has x402 payment header — let payment middleware handle it
+        const paymentHeader = req.headers['x-payment'] as string | undefined;
+        if (paymentHeader) {
+            // Has payment — let x402 middleware verify it
+            next();
+            return;
+        }
+
         const resetIn = Math.ceil((entry.resetAt - now) / 1000);
         res.status(429).json({
             error: 'Rate limit exceeded',
-            message: `Free tier limit: ${FREE_TIER_LIMIT} calls/day. Resets in ${resetIn}s. Add an x-api-key header for unlimited access.`,
+            message: `Free tier limit: ${FREE_TIER_LIMIT} calls/day. Resets in ${resetIn}s. Use x-api-key header for unlimited access, or send SOL via x402 payment protocol.`,
             limit: FREE_TIER_LIMIT,
             remaining: 0,
             resetInSeconds: resetIn,
+            x402: 'Send SOL to treasury and include tx signature in X-PAYMENT header. See /v1/pricing for details.',
         });
         return;
     }
