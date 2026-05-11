@@ -32,9 +32,11 @@ import { analyzeTokenSafety } from '../core/token_safety.js';
 import { checkHoneypot } from '../core/honeypot_sim.js';
 import { analyzeHolders } from '../core/holder_analysis.js';
 import { enrichWithBirdeye } from '../core/birdeye.js';
+import { enrichCreatorReputation, extractHeliusApiKey } from '../core/helius_wallet.js';
 
 const RPC_URL = process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const BIRDEYE_API_KEY = process.env.BIRDEYE_API_KEY || '';
+const HELIUS_API_KEY  = extractHeliusApiKey(RPC_URL);
 
 export function createMCPServer(): McpServer {
     const connection = new Connection(RPC_URL, 'finalized');
@@ -174,20 +176,27 @@ export function createMCPServer(): McpServer {
                     } catch { /* best-effort */ }
                 }
 
-                const [safety, honeypot, holders, birdeye] = await Promise.all([
+                const [safety, honeypot, holders, birdeye, walletIntel] = await Promise.all([
                     analyzeTokenSafety(connection, mint, txInfo, isPumpSwap ?? false),
                     checkHoneypot(mint),
                     analyzeHolders(connection, mint),
                     enrichWithBirdeye(mint, BIRDEYE_API_KEY),
+                    enrichCreatorReputation(mint, HELIUS_API_KEY),
                 ]);
 
                 let onChainScore = safety.riskScore;
                 if (honeypot.isHoneypot) onChainScore = Math.min(onChainScore + 30, 100);
                 if (holders.concentrated) onChainScore = Math.min(onChainScore + 15, 100);
 
+                const reputationScore = walletIntel.reputation?.riskScore ?? 0;
                 const marketScore = birdeye.marketRisk.score;
-                const finalScore = Math.round(onChainScore * 0.7 + marketScore * 0.3);
-                const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated && marketScore < 30;
+                const finalScore = Math.round(
+                    onChainScore * 0.60 +
+                    marketScore * 0.25 +
+                    reputationScore * 0.15
+                );
+                const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated
+                    && marketScore < 30 && reputationScore < 30;
 
                 const verdict = finalScore === 0 ? 'SAFE'
                     : finalScore <= 15 ? 'CAUTION'
@@ -201,6 +210,7 @@ export function createMCPServer(): McpServer {
                             safe: combinedSafe,
                             onChainRiskScore: onChainScore,
                             marketRiskScore: marketScore,
+                            reputationScore,
                             finalScore,
                             verdict,
                             safety,
@@ -219,6 +229,16 @@ export function createMCPServer(): McpServer {
                                     holders: birdeye.overview.holder,
                                 } : null,
                                 marketFlags: birdeye.marketRisk.flags,
+                            },
+                            walletIntel: {
+                                creatorAddress: walletIntel.creatorAddress,
+                                reputation: walletIntel.reputation ? {
+                                    verdict: walletIntel.reputation.verdict,
+                                    riskScore: walletIntel.reputation.riskScore,
+                                    flags: walletIntel.reputation.flags,
+                                    creatorAge: walletIntel.reputation.creatorAge,
+                                    identity: walletIntel.reputation.identity,
+                                } : null,
                             },
                         }, null, 2),
                     }],

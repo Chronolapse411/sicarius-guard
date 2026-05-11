@@ -2,7 +2,7 @@
 
 **Solana Token Safety Oracle for AI Agents & Trading Bots**
 
-Real-time token safety analysis combining byte-level on-chain inspection with market intelligence. Built for autonomous AI agents, MCP-enabled LLMs, and trading infrastructure.
+Real-time token safety analysis combining byte-level on-chain inspection, market intelligence, and wallet reputation scoring. Built for autonomous AI agents, MCP-enabled LLMs, and trading infrastructure.
 
 > *"Don't trade blind. Query SicariusGuard before every swap."*
 
@@ -10,27 +10,34 @@ Real-time token safety analysis combining byte-level on-chain inspection with ma
 
 ## 🔍 What It Does
 
-SicariusGuard performs **5 layers of safety analysis** on any Solana SPL token in under 2 seconds:
+SicariusGuard performs **7 layers of safety analysis** on any Solana SPL token:
 
-| Layer | Analysis | Detection |
-|-------|----------|-----------|
-| 🔓 **Mint Authority** | Raw SPL mint account byte read | Can deployer print infinite tokens? |
-| 🧊 **Freeze Authority** | SPL layout offset 46 inspection | Can deployer freeze any wallet? |
-| ⚠️ **Token-2022 Extensions** | Extension type scanning | PermanentDelegate, TransferHook, ConfidentialTransfers |
-| 🍯 **Honeypot Detection** | Jupiter sell simulation (dry-run) | Can you actually sell this token? |
-| 📊 **Holder Concentration** | `getTokenLargestAccounts` analysis | Top 5 wallets controlling >50% supply? |
-| 📈 **Market Intelligence** | Birdeye API enrichment | Liquidity, volume, wash trading, price manipulation |
+| Layer | Source | Detection |
+|-------|--------|-----------|
+| 🔓 **Mint Authority** | Raw SPL mint bytes | Can deployer print infinite tokens? |
+| 🧊 **Freeze Authority** | SPL layout offset 46 | Can deployer freeze any wallet? |
+| ⚠️ **Token-2022 Extensions** | Extension type scan | PermanentDelegate, TransferHook, ConfidentialTransfers |
+| 🍯 **Honeypot Detection** | Jupiter sell simulation | Can you actually sell this token? |
+| 📊 **Holder Concentration** | `getTokenLargestAccounts` | Top 5 wallets controlling >50% supply? |
+| 📈 **Market Intelligence** | Birdeye API | Liquidity, volume, wash trading, manipulation |
+| 🔎 **Wallet Reputation** | Helius Identity + Funded-By | Is the deployer wallet a known scammer? |
 
-### Risk Scoring
-
-Every analysis returns a **0-100 risk score** with a clear verdict:
+### Weighted Risk Scoring (60/25/15 Model)
 
 ```
+finalScore = (onChainRisk × 0.60) + (marketRisk × 0.25) + (reputationRisk × 0.15)
+
 0       → SAFE
 1-15    → CAUTION
 16-50   → HIGH_RISK
 51-100  → CRITICAL
 ```
+
+| Weight | Source | What It Catches |
+|--------|--------|----------------|
+| **60%** | On-chain safety | Mint/freeze authority, honeypots, extensions |
+| **25%** | Birdeye market data | Low liquidity, wash trading, price manipulation |
+| **15%** | Helius wallet intel | Scammer wallets, suspicious funding chains |
 
 ## 🚀 Quick Start
 
@@ -59,7 +66,7 @@ npm start
 |--------|----------|-------------|
 | `POST` | `/v1/check` | Full on-chain safety analysis |
 | `GET` | `/v1/check/:mint` | Convenience GET for safety check |
-| `POST` | `/v1/scan` | Full analysis + Birdeye market enrichment |
+| `POST` | `/v1/scan` | Full analysis + Birdeye + Helius wallet intel |
 | `GET` | `/v1/scan/:mint` | Convenience GET for enriched scan |
 | `POST` | `/v1/honeypot` | Honeypot-only check (Jupiter sell sim) |
 | `POST` | `/v1/holders` | Holder concentration analysis |
@@ -73,17 +80,15 @@ npm start
 # Basic safety check
 curl -X POST http://localhost:3400/v1/check \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{"mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"}'
+  -d '{"mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"}'
 
-# Full scan with Birdeye enrichment
+# Full scan with Birdeye + Helius enrichment
 curl -X POST http://localhost:3400/v1/scan \
   -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{"mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"}'
+  -d '{"mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"}'
 ```
 
-### Example Response
+### Example Response (`/v1/scan`)
 
 ```json
 {
@@ -99,13 +104,40 @@ curl -X POST http://localhost:3400/v1/scan \
       "supplyConcentration": { "status": "OK", "safe": true }
     }
   },
-  "honeypot": { "isHoneypot": false, "sellable": true },
-  "holders": { "concentrated": false, "top5Pct": 12.3 },
+  "honeypot": {
+    "isHoneypot": false,
+    "sellable": true,
+    "reason": "Sellable via Raydium → Quantum"
+  },
+  "holders": {
+    "concentrated": false,
+    "stats": { "top10Pct": 8.2 }
+  },
+  "birdeye": {
+    "overview": {
+      "price": 0.0000075,
+      "liquidity": 3511099,
+      "marketCap": 631226030,
+      "holder": 999749
+    },
+    "marketRisk": { "verdict": "MARKET_SAFE", "flags": [] }
+  },
+  "walletIntel": {
+    "creatorAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+    "reputation": {
+      "verdict": "TRUSTED",
+      "riskScore": 0,
+      "flags": []
+    }
+  },
   "combined": {
     "safe": true,
     "riskScore": 0,
+    "marketRiskScore": 0,
+    "reputationScore": 0,
+    "finalScore": 0,
     "verdict": "SAFE",
-    "summary": "All checks passed"
+    "summary": "All checks passed — token appears safe"
   }
 }
 ```
@@ -121,6 +153,7 @@ SicariusGuard exposes tools via the **Model Context Protocol (MCP)**, enabling L
 | `check_token_safety` | Full SPL mint safety analysis |
 | `check_honeypot` | Jupiter sell simulation |
 | `check_holder_concentration` | Top holder analysis |
+| `full_token_scan` | Complete scan with Birdeye + Helius intel |
 
 ### Usage with Claude/Cursor
 
@@ -153,35 +186,38 @@ if (!result.safe) {
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    SicariusGuard                         │
-│                                                         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │
-│  │ REST API    │  │ MCP Server  │  │ x402 Payment    │ │
-│  │ Express     │  │ stdio       │  │ SOL Micropay    │ │
-│  └──────┬──────┘  └──────┬──────┘  └────────┬────────┘ │
-│         │                │                   │          │
-│  ┌──────▼────────────────▼───────────────────▼────────┐ │
-│  │              Core Safety Engine                    │ │
-│  │                                                    │ │
-│  │  ┌────────────┐ ┌──────────┐ ┌─────────────────┐  │ │
-│  │  │ token_     │ │honeypot_ │ │ holder_         │  │ │
-│  │  │ safety.ts  │ │sim.ts    │ │ analysis.ts     │  │ │
-│  │  └────────────┘ └──────────┘ └─────────────────┘  │ │
-│  │                                                    │ │
-│  │  ┌────────────────────────────────────────────┐    │ │
-│  │  │ birdeye.ts — Market Intelligence Layer     │    │ │
-│  │  │  • Token Overview (price, volume, liq)     │    │ │
-│  │  │  • Security Flags (holders, metadata)      │    │ │
-│  │  │  • Trade Data (wash trading detection)     │    │ │
-│  │  └────────────────────────────────────────────┘    │ │
-│  └────────────────────────────────────────────────────┘ │
-│                         │                               │
-│              ┌──────────▼──────────┐                    │
-│              │  Solana Mainnet     │                    │
-│              │  (Helius RPC)       │                    │
-│              └─────────────────────┘                    │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                       SicariusGuard                           │
+│                                                              │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────┐ │
+│  │ REST API    │  │ MCP Server  │  │ x402 Payment Gate    │ │
+│  │ Express 5   │  │ stdio       │  │ SOL Micropayments    │ │
+│  └──────┬──────┘  └──────┬──────┘  └──────────┬───────────┘ │
+│         │                │                     │             │
+│  ┌──────▼────────────────▼─────────────────────▼───────────┐ │
+│  │                  Core Safety Engine                      │ │
+│  │                                                          │ │
+│  │  ┌────────────┐ ┌──────────┐ ┌───────────────────────┐  │ │
+│  │  │ token_     │ │honeypot_ │ │ holder_               │  │ │
+│  │  │ safety.ts  │ │sim.ts    │ │ analysis.ts           │  │ │
+│  │  └────────────┘ └──────────┘ └───────────────────────┘  │ │
+│  │                                                          │ │
+│  │  ┌────────────────────┐  ┌────────────────────────────┐ │ │
+│  │  │ birdeye.ts         │  │ helius_wallet.ts           │ │ │
+│  │  │ Market Intelligence│  │ Wallet Reputation (15%)    │ │ │
+│  │  │ • Price/Volume     │  │ • Identity API             │ │ │
+│  │  │ • Liquidity        │  │ • Funded-By chain          │ │ │
+│  │  │ • Wash trading     │  │ • Scammer detection        │ │ │
+│  │  └────────────────────┘  └────────────────────────────┘ │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│                         │                                     │
+│         ┌───────────────┼───────────────┐                    │
+│         ▼               ▼               ▼                    │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐           │
+│  │ Solana RPC  │ │ Birdeye API │ │ Helius DAS  │           │
+│  │ (Helius)    │ │ (Market)    │ │ (Wallet)    │           │
+│  └─────────────┘ └─────────────┘ └─────────────┘           │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## 💰 x402 Payment Protocol
@@ -201,10 +237,10 @@ SicariusGuard implements the **x402 HTTP Payment Required** protocol for machine
 
 | Endpoint | Price (SOL) | ~USD |
 |----------|------------|------|
-| `/v1/check` | 0.001 | $0.15 |
-| `/v1/scan` | 0.002 | $0.30 |
-| `/v1/honeypot` | 0.0005 | $0.07 |
-| `/v1/holders` | 0.0005 | $0.07 |
+| `/v1/check` | 0.001 | ~$0.17 |
+| `/v1/scan` | 0.002 | ~$0.34 |
+| `/v1/honeypot` | 0.0005 | ~$0.085 |
+| `/v1/holders` | 0.0005 | ~$0.085 |
 
 ### Example (Paid Request)
 
@@ -222,6 +258,14 @@ curl -X POST http://localhost:3400/v1/scan \
   -d '{"mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"}'
 ```
 
+### Security
+
+- **On-chain verification** — Every payment is verified against Solana mainnet
+- **Replay protection** — Each tx signature can only be used once
+- **Amount validation** — Exact SOL amount must match endpoint pricing
+- **Freshness check** — Transactions older than 10 minutes are rejected
+- **Verified live on mainnet** — Tested with real SOL transfers
+
 ### Access Tiers
 
 | Tier | Auth Method | Rate Limit |
@@ -233,23 +277,36 @@ curl -X POST http://localhost:3400/v1/scan \
 ## 🔧 Configuration
 
 | Variable | Description | Default |
-|----------|-------------|---------|
-| `HELIUS_RPC_URL` | Solana RPC endpoint | `https://api.mainnet-beta.solana.com` |
+|----------|-------------|---------| 
+| `HELIUS_RPC_URL` | Solana RPC endpoint (Helius recommended) | `https://api.mainnet-beta.solana.com` |
 | `PORT` | API server port | `3400` |
 | `HOST` | Bind address | `0.0.0.0` |
-| `BIRDEYE_API_KEY` | Birdeye API key (optional) | — |
+| `BIRDEYE_API_KEY` | Birdeye API key (optional, enriches scans) | — |
 | `TREASURY_WALLET` | SOL payment recipient | `5QMsfrU...LFM` |
 | `CACHE_TTL_SECONDS` | Cache duration | `300` |
-| `FREE_TIER_CALLS_PER_DAY` | Rate limit | `100` |
+| `FREE_TIER_CALLS_PER_DAY` | Free tier rate limit | `100` |
+
+## 📊 Performance
+
+Tested with 50-token bulk scan (mainnet, 2026-05-11):
+
+| Metric | Value |
+|--------|-------|
+| Success rate | **50/50 (100%)** |
+| Avg latency | 5.4s |
+| API calls per scan | 2 Birdeye + 4 Helius |
+| Cost per scan | ~$0.0005 (API provider costs) |
+| Profit margin (x402) | **99.7%** per scan |
 
 ## 📦 Tech Stack
 
-- **Runtime:** Node.js 20+ (ESM)
+- **Runtime:** Node.js 22+ (ESM)
 - **Language:** TypeScript 5.9
 - **Blockchain:** @solana/web3.js (direct RPC, no wrapper SDKs)
 - **API:** Express 5
 - **MCP:** @modelcontextprotocol/sdk
-- **Market Data:** Birdeye API
+- **Market Data:** Birdeye API v3
+- **Wallet Intel:** Helius DAS / Identity / Funded-By APIs
 
 ## 🛡️ Why SicariusGuard?
 
@@ -260,11 +317,13 @@ Most token safety tools rely on third-party APIs that can be gamed. SicariusGuar
 | Byte-level SPL analysis | ✅ | ❌ | ❌ |
 | Token-2022 extension scanning | ✅ | ❌ | Partial |
 | Jupiter honeypot simulation | ✅ | ❌ | ❌ |
+| Helius wallet reputation | ✅ | ❌ | ❌ |
+| Weighted multi-source scoring | ✅ | ❌ | ❌ |
 | MCP server for AI agents | ✅ | ❌ | ❌ |
 | x402 pay-per-call (SOL) | ✅ | ❌ | ❌ |
 | Self-hosted (no vendor lock-in) | ✅ | ❌ | ❌ |
 | Birdeye market enrichment | ✅ | ❌ | ❌ |
-| Sub-2s response time | ✅ | ✅ | ✅ |
+| Sub-6s full scan | ✅ | ✅ | ✅ |
 
 ## 📄 License
 

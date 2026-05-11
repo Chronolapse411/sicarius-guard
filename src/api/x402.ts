@@ -30,7 +30,16 @@ const TREASURY_WALLET = process.env.TREASURY_WALLET || '5QMsfrUcaJ8WgD98MD8NJ3aE
 const RPC_URL = process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
 // Price per endpoint in SOL
+// Keys are RELATIVE paths (req.path is relative when mounted via app.use('/v1', ...))
 const ENDPOINT_PRICING: Record<string, number> = {
+    '/check':   0.001,
+    '/scan':    0.002,
+    '/honeypot': 0.0005,
+    '/holders': 0.0005,
+};
+
+// Full-path pricing for external display (used in 402 responses and /v1/pricing)
+const DISPLAY_PRICING: Record<string, number> = {
     '/v1/check':   0.001,
     '/v1/scan':    0.002,
     '/v1/honeypot': 0.0005,
@@ -179,10 +188,9 @@ export function x402PaymentMiddleware(req: Request, res: Response, next: NextFun
 
     const [route, amount] = price;
 
-    // Check for API key (free tier bypass)
-    const apiKey = req.headers['x-api-key'] as string | undefined;
-    if (apiKey) {
-        // API key auth handled by existing auth middleware — skip payment
+    // If auth middleware already authenticated this request (free tier or API key), skip payment
+    const authPassed = (req as unknown as Record<string, unknown>).authPassed as boolean | undefined;
+    if (authPassed) {
         next();
         return;
     }
@@ -200,7 +208,7 @@ export function x402PaymentMiddleware(req: Request, res: Response, next: NextFun
             currency: 'SOL',
             amount,
             recipient: TREASURY_WALLET,
-            description: `SicariusGuard API — ${route}`,
+            description: `SicariusGuard API — /v1${route}`,
             nonce,
             expiresAt,
         };
@@ -215,7 +223,7 @@ export function x402PaymentMiddleware(req: Request, res: Response, next: NextFun
                 step2: 'Include the transaction signature in the X-PAYMENT header',
                 step3: 'Retry this request with the X-PAYMENT header',
             },
-            pricing: ENDPOINT_PRICING,
+            pricing: DISPLAY_PRICING,
         });
         return;
     }
@@ -277,7 +285,7 @@ export function cleanupPaymentCache(): void {
  * Get current pricing table.
  */
 export function getPricing(): Record<string, number> {
-    return { ...ENDPOINT_PRICING };
+    return { ...DISPLAY_PRICING };
 }
 
 /**

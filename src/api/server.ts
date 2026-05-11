@@ -20,6 +20,7 @@ import { analyzeHolders, type HolderResult } from '../core/holder_analysis.js';
 import { authMiddleware, cleanupRateLimits } from './auth.js';
 import { ResultCache } from './cache.js';
 import { enrichWithBirdeye, type BirdeyeEnrichment } from '../core/birdeye.js';
+import { enrichCreatorReputation, extractHeliusApiKey, type WalletIntelligence } from '../core/helius_wallet.js';
 import { x402PaymentMiddleware, cleanupPaymentCache, getPricing, getPaymentStats } from './x402.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -41,10 +42,12 @@ interface FullScanResult {
     honeypot:  HoneypotResult;
     holders:   HolderResult;
     birdeye:   BirdeyeEnrichment;
+    walletIntel: WalletIntelligence;
     combined:  {
         safe:           boolean;
         riskScore:      number;
         marketRiskScore: number;
+        reputationScore: number;
         finalScore:     number;
         verdict:        string;
         summary:        string;
@@ -69,6 +72,7 @@ const fullCache     = new ResultCache<FullCheckResult>(CACHE_TTL);
 const scanCache     = new ResultCache<FullScanResult>(CACHE_TTL);
 
 const BIRDEYE_API_KEY = process.env.BIRDEYE_API_KEY || '';
+const HELIUS_API_KEY  = extractHeliusApiKey(RPC_URL);
 
 // Solana address validation (base58, 32-44 chars)
 const MINT_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
@@ -336,12 +340,13 @@ export function createApp(): express.Express {
                 } catch { /* best-effort */ }
             }
 
-            // Run ALL checks in parallel — on-chain + Birdeye
-            const [safety, honeypot, holders, birdeye] = await Promise.all([
+            // Run ALL checks in parallel — on-chain + Birdeye + Helius Wallet Intel
+            const [safety, honeypot, holders, birdeye, walletIntel] = await Promise.all([
                 analyzeTokenSafety(connection, mint, txInfo, isPumpSwap ?? false),
                 checkHoneypot(mint),
                 analyzeHolders(connection, mint),
                 enrichWithBirdeye(mint, BIRDEYE_API_KEY),
+                enrichCreatorReputation(mint, HELIUS_API_KEY),  // Look up mint in Orb identity DB
             ]);
 
             // Combine on-chain score
@@ -349,11 +354,19 @@ export function createApp(): express.Express {
             if (honeypot.isHoneypot) onChainScore = Math.min(onChainScore + 30, 100);
             if (holders.concentrated) onChainScore = Math.min(onChainScore + 15, 100);
 
-            // Weighted final score: 70% on-chain, 30% market data
-            const marketScore = birdeye.marketRisk.score;
-            const finalScore = Math.round(onChainScore * 0.7 + marketScore * 0.3);
+            // Reputation score from Helius wallet intelligence
+            const reputationScore = walletIntel.reputation?.riskScore ?? 0;
 
-            const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated && marketScore < 30;
+            // Weighted final score: 60% on-chain, 25% market data, 15% reputation
+            const marketScore = birdeye.marketRisk.score;
+            const finalScore = Math.round(
+                onChainScore * 0.60 +
+                marketScore * 0.25 +
+                reputationScore * 0.15
+            );
+
+            const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated
+                && marketScore < 30 && reputationScore < 30;
 
             const verdict = finalScore === 0 ? 'SAFE'
                 : finalScore <= 15 ? 'CAUTION'
@@ -367,16 +380,21 @@ export function createApp(): express.Express {
             if (birdeye.marketRisk.flags.length > 0) {
                 summaryParts.push(`Market flags: ${birdeye.marketRisk.flags.join(', ')}`);
             }
+            if (walletIntel.reputation && walletIntel.reputation.flags.length > 0) {
+                summaryParts.push(`Reputation: ${walletIntel.reputation.flags.join(', ')}`);
+            }
 
             const result: FullScanResult = {
                 safety,
                 honeypot,
                 holders,
                 birdeye,
+                walletIntel,
                 combined: {
                     safe: combinedSafe,
                     riskScore: onChainScore,
                     marketRiskScore: marketScore,
+                    reputationScore,
                     finalScore,
                     verdict,
                     summary: combinedSafe ? 'All checks passed — token appears safe' : summaryParts.join('; '),
@@ -408,20 +426,27 @@ export function createApp(): express.Express {
             return;
         }
 
-        const [safety, honeypot, holders, birdeye] = await Promise.all([
+        const [safety, honeypot, holders, birdeye, walletIntel] = await Promise.all([
             analyzeTokenSafety(connection, mint),
             checkHoneypot(mint),
             analyzeHolders(connection, mint),
             enrichWithBirdeye(mint, BIRDEYE_API_KEY),
+            enrichCreatorReputation(mint, HELIUS_API_KEY),
         ]);
 
         let onChainScore = safety.riskScore;
         if (honeypot.isHoneypot) onChainScore = Math.min(onChainScore + 30, 100);
         if (holders.concentrated) onChainScore = Math.min(onChainScore + 15, 100);
 
+        const reputationScore = walletIntel.reputation?.riskScore ?? 0;
         const marketScore = birdeye.marketRisk.score;
-        const finalScore = Math.round(onChainScore * 0.7 + marketScore * 0.3);
-        const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated && marketScore < 30;
+        const finalScore = Math.round(
+            onChainScore * 0.60 +
+            marketScore * 0.25 +
+            reputationScore * 0.15
+        );
+        const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated
+            && marketScore < 30 && reputationScore < 30;
 
         const verdict = finalScore === 0 ? 'SAFE'
             : finalScore <= 15 ? 'CAUTION'
@@ -433,10 +458,12 @@ export function createApp(): express.Express {
             honeypot,
             holders,
             birdeye,
+            walletIntel,
             combined: {
                 safe: combinedSafe,
                 riskScore: onChainScore,
                 marketRiskScore: marketScore,
+                reputationScore,
                 finalScore,
                 verdict,
                 summary: combinedSafe ? 'All checks passed — token appears safe' : [
@@ -444,6 +471,7 @@ export function createApp(): express.Express {
                     honeypot.isHoneypot ? 'Honeypot detected' : '',
                     holders.concentrated ? holders.reason : '',
                     birdeye.marketRisk.flags.length > 0 ? `Market: ${birdeye.marketRisk.flags.join(', ')}` : '',
+                    walletIntel.reputation?.flags.length ? `Reputation: ${walletIntel.reputation.flags.join(', ')}` : '',
                 ].filter(Boolean).join('; '),
             },
         };

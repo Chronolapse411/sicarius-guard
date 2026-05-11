@@ -54,6 +54,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
             return;
         }
         // Valid key (or no keys configured = open access)
+        (req as unknown as Record<string, unknown>).authPassed = true;
         next();
         return;
     }
@@ -91,6 +92,9 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
         });
         return;
     }
+
+    // Free tier — mark as authenticated so x402 doesn't block
+    (req as unknown as Record<string, unknown>).authPassed = true;
 
     // Set rate limit headers
     res.setHeader('X-RateLimit-Limit', FREE_TIER_LIMIT);
