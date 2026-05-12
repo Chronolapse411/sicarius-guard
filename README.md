@@ -6,6 +6,13 @@ Real-time token safety analysis combining byte-level on-chain inspection, market
 
 > *"Don't trade blind. Query SicariusGuard before every swap."*
 
+### 🌐 Live API: `https://sicarius-guard-640545264957.us-east4.run.app`
+
+```bash
+# Try it now — no auth required (100 free calls/day)
+curl https://sicarius-guard-640545264957.us-east4.run.app/v1/scan/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
+```
+
 ---
 
 ## 🔍 What It Does
@@ -77,15 +84,11 @@ npm start
 ### Example Request
 
 ```bash
-# Basic safety check
-curl -X POST http://localhost:3400/v1/check \
-  -H "Content-Type: application/json" \
-  -d '{"mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"}'
+# Basic safety check (BONK)
+curl https://sicarius-guard-640545264957.us-east4.run.app/v1/check/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
 
 # Full scan with Birdeye + Helius enrichment
-curl -X POST http://localhost:3400/v1/scan \
-  -H "Content-Type: application/json" \
-  -d '{"mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"}'
+curl https://sicarius-guard-640545264957.us-east4.run.app/v1/scan/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
 ```
 
 ### Example Response (`/v1/scan`)
@@ -169,20 +172,6 @@ SicariusGuard exposes tools via the **Model Context Protocol (MCP)**, enabling L
 }
 ```
 
-### Usage with Solana Agent Kit
-
-```typescript
-import { SicariusGuard } from 'sicarius-guard';
-
-const guard = new SicariusGuard({ rpcUrl: process.env.HELIUS_RPC_URL });
-const result = await guard.checkToken('So11111111111111111111111111111111111111112');
-
-if (!result.safe) {
-  console.log(`⚠️ ${result.verdict}: ${result.reason}`);
-  // Agent decides not to trade
-}
-```
-
 ## 🏗️ Architecture
 
 ```
@@ -245,17 +234,17 @@ SicariusGuard implements the **x402 HTTP Payment Required** protocol for machine
 ### Example (Paid Request)
 
 ```bash
-# Step 1: Get pricing
-curl http://localhost:3400/v1/pricing
+# Step 1: Get pricing + treasury address
+curl https://sicarius-guard-640545264957.us-east4.run.app/v1/pricing
 
-# Step 2: Send SOL to treasury address (shown in /v1/pricing response)
+# Step 2: Send SOL to treasury address (returned in pricing response)
 solana transfer <TREASURY_ADDRESS> 0.002
 
 # Step 3: Use tx signature as payment proof
-curl -X POST http://localhost:3400/v1/scan \
+curl -X POST https://sicarius-guard-640545264957.us-east4.run.app/v1/scan \
   -H "Content-Type: application/json" \
   -H "X-PAYMENT: <your_tx_signature>" \
-  -d '{"mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"}'
+  -d '{"mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"}'
 ```
 
 ### Security
@@ -328,6 +317,6 @@ MIT — Built by [Chronolapse411](https://github.com/Chronolapse411)
 
 ## 🔗 Links
 
+- **Live API:** [sicarius-guard-640545264957.us-east4.run.app](https://sicarius-guard-640545264957.us-east4.run.app/health)
 - **GitHub:** [github.com/Chronolapse411/sicarius-guard](https://github.com/Chronolapse411/sicarius-guard)
-- **Author:** Manuel Delgado ([@Chronolapse411](https://github.com/Chronolapse411))
-- **Business:** DelgadoLogic
+- **Author:** [@Chronolapse411](https://github.com/Chronolapse411)
