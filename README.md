@@ -4,6 +4,7 @@
 
 [![sicarius-guard MCP server](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard/badges/card.svg)](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard)
 [![Score](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard/badges/score.svg)](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard)
+[![npm version](https://img.shields.io/npm/v/sicarius-guard.svg)](https://www.npmjs.com/package/sicarius-guard)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Smithery](https://smithery.ai/badge/sicarius-guard)](https://smithery.ai/server/chronolapse411/sicarius-guard)
 
