@@ -119,13 +119,13 @@ export function createApp(): express.Express {
                 prompts: false,
             },
             tools: [
-                { name: 'check_token_safety', description: 'Analyze a Solana SPL token for rug pull, honeypot, and safety risks.' },
-                { name: 'check_honeypot', description: 'Simulate a sell via Jupiter to detect honeypot tokens.' },
-                { name: 'check_holder_concentration', description: 'Analyze token holder distribution for rug pull indicators.' },
-                { name: 'full_token_scan', description: 'Comprehensive 7-layer safety analysis with Birdeye market intelligence.' },
-                { name: 'get_wallet_reputation', description: 'Investigate wallet reputation via Helius DAS identity data.' },
-                { name: 'get_market_intel', description: 'Real-time market data from Birdeye (price, volume, liquidity).' },
-                { name: 'batch_scan', description: 'Scan up to 10 tokens in parallel for portfolio-level risk assessment.' },
+                { name: 'check_token_safety', description: 'Analyze a Solana SPL token for rug pull, honeypot, and safety risks. 5 checks with combined risk score. Read-only, no side effects.' },
+                { name: 'check_honeypot', description: 'Simulate a sell via Jupiter DEX to detect honeypot tokens. Zero cost, quote-only, no gas.' },
+                { name: 'check_holder_concentration', description: 'Analyze token holder distribution for rug pull indicators. Flags top-heavy supply concentration.' },
+                { name: 'full_token_scan', description: 'Comprehensive 7-layer safety analysis: on-chain + Birdeye market intel + Helius wallet reputation.' },
+                { name: 'get_wallet_reputation', description: 'Investigate wallet reputation via Helius DAS identity data and funding chain analysis.' },
+                { name: 'get_market_intel', description: 'Real-time market data from Birdeye (price, volume, liquidity, market risk flags).' },
+                { name: 'batch_scan', description: 'Scan up to 10 tokens in parallel for portfolio-level risk assessment. Full 7-layer analysis each.' },
             ],
         });
     });

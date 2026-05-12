@@ -11,36 +11,45 @@
   "keywords": [
     "solana", "blockchain", "security", "cryptocurrency", "defi",
     "token-safety", "mcp-server", "rug-pull", "honeypot", "x402",
-    "ai-agents", "trading-bots", "agentic"
+    "ai-agents", "trading-bots", "agentic", "wallet-reputation",
+    "market-intelligence", "birdeye", "helius", "jupiter"
   ],
   "features": {
     "token_safety_analysis": {
       "enabled": true,
-      "note": "5-layer on-chain rug pull detection (mint auth, freeze, Token-2022, honeypot, holders)"
+      "note": "5-layer on-chain rug pull detection (mint auth, freeze, Token-2022, honeypot, holders). Read-only, no side effects."
+    },
+    "full_7_layer_scan": {
+      "enabled": true,
+      "note": "Comprehensive scan combining on-chain checks + Birdeye market intel + Helius wallet reputation. Weighted final score."
     },
     "honeypot_detection": {
       "enabled": true,
-      "note": "Jupiter DEX sell simulation — zero cost, quote-only"
+      "note": "Jupiter DEX sell simulation — zero cost, quote-only, no gas. Returns sellability verdict."
     },
     "market_intelligence": {
       "enabled": true,
-      "note": "Birdeye integration for real-time price, volume, liquidity, and market risk flags"
+      "note": "Birdeye API integration for real-time price, volume, liquidity, holder count, and market risk flags."
     },
     "wallet_reputation": {
       "enabled": true,
-      "note": "Helius DAS identity and funding chain analysis"
+      "note": "Helius DAS identity and funding chain analysis. Checks deployer age, funding source, entity classification."
     },
     "batch_scanning": {
       "enabled": true,
-      "note": "Scan up to 10 tokens in parallel for portfolio-level risk assessment"
+      "note": "Parallel 7-layer scan of up to 10 tokens per call. Ideal for portfolio-level risk assessment."
+    },
+    "holder_concentration": {
+      "enabled": true,
+      "note": "Supply distribution analysis. Flags top-heavy holder patterns (top 1 >50%, top 5 >80%, top 10 >90%)."
     },
     "x402_payments": {
       "enabled": true,
-      "note": "Micropayment protocol for pay-per-scan monetization (0.001-0.002 SOL)"
+      "note": "Micropayment protocol for pay-per-scan monetization (0.001-0.002 SOL per call)."
     },
     "rate_limiting": {
       "enabled": true,
-      "note": "Upstash Redis persistent rate limiting — 100 free calls/day per IP"
+      "note": "Upstash Redis persistent rate limiting — 100 free calls/day per IP, consistent across scaled instances."
     }
   }
 }

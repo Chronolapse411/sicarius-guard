@@ -49,7 +49,7 @@ export function createMCPServer(): McpServer {
     // ── Tool: check_token_safety ─────────────────────────────────────────
     server.tool(
         'check_token_safety',
-        `Analyze a Solana SPL token for rug pull, honeypot, and safety risks. Call this BEFORE executing any swap or buy transaction. Performs 5 checks: mint authority, freeze authority, Token-2022 extensions, honeypot simulation, and holder concentration. Returns a combined risk score (0-100) and verdict.`,
+        `Analyze a Solana SPL token for rug pull, honeypot, and safety risks. Call this BEFORE executing any swap or buy transaction. Performs 5 checks: mint authority, freeze authority, Token-2022 extensions, honeypot simulation, and holder concentration. Returns a JSON object with a combined risk score (0-100) and verdict (SAFE | CAUTION | HIGH_RISK | CRITICAL). This is a read-only operation with no on-chain side effects. Rate limited to 100 free calls/day per IP. Use this instead of check_honeypot or check_holder_concentration when you need a comprehensive pre-trade safety check. Use full_token_scan instead when you also need Birdeye market data and wallet reputation.`,
         {
             mint: z.string().describe('Solana token mint address to check (base58)'),
             txSignature: z.string().optional().describe('Optional: tx signature of pool creation for deeper analysis'),
@@ -112,7 +112,7 @@ export function createMCPServer(): McpServer {
     // ── Tool: check_honeypot ─────────────────────────────────────────────
     server.tool(
         'check_honeypot',
-        `Check if a Solana token is a honeypot by simulating a sell order through Jupiter. Zero cost — only requests a quote. Returns whether the token is sellable.`,
+        `Check if a Solana token is a honeypot by simulating a sell order through Jupiter DEX. Zero cost — only requests a quote, no actual transaction is executed. Returns a JSON object with isHoneypot (boolean) and sellability details. This is a read-only operation with no on-chain side effects or gas costs. Use this when you only need to verify sellability; use check_token_safety for a broader 5-layer analysis, or full_token_scan for the most comprehensive 7-layer scan including market data.`,
         {
             mint: z.string().describe('Solana token mint address'),
             amount: z.string().optional().describe('Raw token amount to simulate selling (default: 1000000)'),
@@ -136,7 +136,7 @@ export function createMCPServer(): McpServer {
     // ── Tool: check_holder_concentration ──────────────────────────────────
     server.tool(
         'check_holder_concentration',
-        `Analyze the distribution of token holders. Detects if supply is concentrated in a few wallets (rug pull indicator). Flags if top 1 holder >50%, top 5 >80%, or top 10 >90%.`,
+        `Analyze token holder distribution to detect supply concentration (a key rug pull indicator). Returns a JSON object with concentrated (boolean), reason, and stats showing percentage held by top 1/5/10 wallets. Flags risk if top 1 holder >50%, top 5 >80%, or top 10 >90%. This is a read-only RPC call with no on-chain side effects. Use this when you specifically need holder distribution data; use check_token_safety for a broader safety analysis that includes this check among 4 others.`,
         {
             mint: z.string().describe('Solana token mint address'),
         },
@@ -159,7 +159,7 @@ export function createMCPServer(): McpServer {
     // ── Tool: full_token_scan ─────────────────────────────────────────────
     server.tool(
         'full_token_scan',
-        `Most comprehensive safety analysis: on-chain byte-level inspection + Birdeye market intelligence. Use for high-value trades. Returns dual risk score (on-chain + market) with weighted final verdict.`,
+        `Most comprehensive 7-layer safety analysis: combines on-chain byte-level inspection (mint auth, freeze, Token-2022, honeypot, holders) with Birdeye market intelligence (liquidity, volume, wash trading) and Helius wallet reputation data. Returns a JSON object with onChainRiskScore, marketRiskScore, reputationScore, weighted finalScore (0-100), verdict (SAFE | CAUTION | HIGH_RISK | CRITICAL), and detailed breakdown. This is a read-only operation with no on-chain side effects. Use this for high-value trades where you need maximum confidence; use check_token_safety for a faster 5-layer check without market data. Rate limited to 100 free calls/day per IP.`,
         {
             mint: z.string().describe('Solana token mint address'),
             txSignature: z.string().optional().describe('Optional: tx signature for deeper analysis'),
@@ -256,7 +256,7 @@ export function createMCPServer(): McpServer {
     // ── Tool: get_wallet_reputation ────────────────────────────────────────
     server.tool(
         'get_wallet_reputation',
-        `Analyze a Solana wallet's reputation using Helius DAS identity data and funding chain analysis. Checks deployer/wallet age, funding source identity, and known entity classification. Use this to evaluate whether a token deployer or counterparty is trustworthy before transacting.`,
+        `Analyze a Solana wallet's reputation using Helius DAS identity data and funding chain analysis. Checks deployer/wallet age, funding source identity, and known entity classification. Returns a JSON object with creatorAddress, reputation verdict, riskScore, flags, creatorAge, and identity data. This is a read-only operation — queries Helius API with no on-chain side effects. Use this to evaluate whether a token deployer or counterparty wallet is trustworthy before transacting. Do not use this for token analysis — use check_token_safety or full_token_scan for that. Requires a Helius API key for full results.`,
         {
             address: z.string().describe('Solana wallet address to investigate (base58)'),
         },
@@ -282,7 +282,7 @@ export function createMCPServer(): McpServer {
     // ── Tool: get_market_intel ────────────────────────────────────────────
     server.tool(
         'get_market_intel',
-        `Get real-time market intelligence for a Solana token from Birdeye. Returns price, 24h volume, liquidity depth, market cap, holder count, and market risk flags (wash trading, low liquidity, extreme volume ratios). Use this for trade sizing and market health assessment.`,
+        `Get real-time market intelligence for a Solana token from the Birdeye API. Returns a JSON object with price, 24h volume, liquidity depth, market cap, holder count, 24h price change, and market risk flags (wash trading, low liquidity, extreme volume-to-liquidity ratios). This is a read-only API call with no on-chain side effects. Use this for trade sizing, market health assessment, and liquidity analysis. Do not use this for safety/rug-pull checks — use check_token_safety or full_token_scan for that. Requires a Birdeye API key for data.`,
         {
             mint: z.string().describe('Solana token mint address'),
         },
@@ -319,7 +319,7 @@ export function createMCPServer(): McpServer {
     // ── Tool: batch_scan ──────────────────────────────────────────────────
     server.tool(
         'batch_scan',
-        `Scan multiple Solana tokens in a single call for portfolio-level risk assessment. Runs full_token_scan on each mint in parallel (max 10 per batch). Returns an array of results with verdicts for each token. Use this when evaluating a portfolio, watchlist, or multiple tokens from a pool discovery.`,
+        `Scan multiple Solana tokens in a single call for portfolio-level risk assessment. Runs the full 7-layer analysis (same as full_token_scan) on each mint in parallel. Returns a JSON object with scanned count and a results array, each containing mint, safe (boolean), finalScore (0-100), verdict, honeypot status, liquidity, marketFlags, and walletAge. Max 10 tokens per batch. This is a read-only operation with no on-chain side effects. Use this when evaluating a portfolio, watchlist, or multiple tokens from a pool discovery. Do not use this for a single token — use full_token_scan or check_token_safety instead, as they return more detailed results.`,
         {
             mints: z.array(z.string()).max(10).describe('Array of Solana token mint addresses to scan (max 10)'),
         },

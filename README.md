@@ -154,16 +154,19 @@ curl https://sicarius-guard-640545264957.us-east4.run.app/v1/scan/DezXAZ8z7PnrnR
 
 SicariusGuard exposes tools via the **Model Context Protocol (MCP)**, enabling LLMs and agent frameworks to call safety checks natively.
 
-### Available MCP Tools
+### Available MCP Tools (7)
 
-| Tool | Description |
-|------|-------------|
-| `check_token_safety` | Full SPL mint safety analysis |
-| `check_honeypot` | Jupiter sell simulation |
-| `check_holder_concentration` | Top holder analysis |
-| `full_token_scan` | Complete scan with Birdeye + Helius intel |
+| Tool | Description | Read-Only |
+|------|-------------|:---------:|
+| `check_token_safety` | 5-layer on-chain rug pull, honeypot, and holder analysis | ✅ |
+| `check_honeypot` | Jupiter DEX sell simulation — zero cost, quote-only | ✅ |
+| `check_holder_concentration` | Top holder distribution analysis with concentration flags | ✅ |
+| `full_token_scan` | 7-layer scan: on-chain + Birdeye market + Helius wallet reputation | ✅ |
+| `get_wallet_reputation` | Helius DAS identity, funding chain, deployer age analysis | ✅ |
+| `get_market_intel` | Birdeye market data: price, volume, liquidity, risk flags | ✅ |
+| `batch_scan` | Parallel 7-layer scan of up to 10 tokens per call | ✅ |
 
-### Usage with Claude/Cursor
+### Usage with Claude Desktop / Cursor
 
 ```json
 {
@@ -171,10 +174,21 @@ SicariusGuard exposes tools via the **Model Context Protocol (MCP)**, enabling L
     "sicarius-guard": {
       "command": "node",
       "args": ["dist/mcp-server.js"],
-      "cwd": "/path/to/sicarius-guard"
+      "cwd": "/path/to/sicarius-guard",
+      "env": {
+        "HELIUS_RPC_URL": "https://mainnet.helius-rpc.com/?api-key=YOUR_KEY",
+        "BIRDEYE_API_KEY": "your-birdeye-key"
+      }
     }
   }
 }
+```
+
+### Usage via npx
+
+```bash
+# Run directly without cloning
+npx sicarius-guard
 ```
 
 ## 🏗️ Architecture
@@ -278,6 +292,8 @@ curl -X POST https://sicarius-guard-640545264957.us-east4.run.app/v1/scan \
 | `TREASURY_WALLET` | SOL payment recipient (x402) | — |
 | `CACHE_TTL_SECONDS` | Cache duration | `300` |
 | `FREE_TIER_CALLS_PER_DAY` | Free tier rate limit | `100` |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis URL for persistent rate limiting | — |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis auth token | — |
 
 ## 📊 Performance
 
