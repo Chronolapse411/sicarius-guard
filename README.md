@@ -333,12 +333,26 @@ Most token safety tools rely on third-party APIs that can be gamed. SicariusGuar
 | Birdeye market enrichment | ✅ | ❌ | ❌ |
 | Sub-6s full scan | ✅ | ✅ | ✅ |
 
+## 🔗 Related MCP Servers
+
+Build powerful agentic workflows by combining SicariusGuard with these complementary MCP servers:
+
+| Server | Description | Use With SicariusGuard |
+|--------|-------------|----------------------|
+| [Pentagonal](https://glama.ai/mcp/servers/Pentagonal-ai/pentagonal) | AI-powered smart contract auditing for Solidity & Anchor/Rust | Audit the contract → scan the token with SicariusGuard |
+| [Desk3](https://glama.ai/mcp/servers/desk3/cryptocurrency-mcp-server) | Real-time cryptocurrency market data | Get macro market context → validate token safety |
+| [AgentForge](https://glama.ai/mcp/servers/agentforge/agentforge) | DeFi safety layer — SPL approval scans & contract registry | Check approvals → scan token safety with SicariusGuard |
+| [Financial Datasets](https://glama.ai/mcp/servers/financial-datasets/mcp-server) | Stock & market data for AI assistants | Cross-market correlation analysis |
+
 ## 📄 License
 
 MIT — Built by [Chronolapse411](https://github.com/Chronolapse411)
 
 ## 🔗 Links
 
+- **npm:** [npmjs.com/package/sicarius-guard](https://www.npmjs.com/package/sicarius-guard)
 - **Live API:** [sicarius-guard-640545264957.us-east4.run.app](https://sicarius-guard-640545264957.us-east4.run.app/health)
 - **GitHub:** [github.com/Chronolapse411/sicarius-guard](https://github.com/Chronolapse411/sicarius-guard)
+- **Glama:** [glama.ai/mcp/servers/Chronolapse411/sicarius-guard](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard)
 - **Author:** [@Chronolapse411](https://github.com/Chronolapse411)
+

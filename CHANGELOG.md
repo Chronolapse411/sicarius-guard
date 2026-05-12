@@ -15,4 +15,10 @@ All notable changes to SicariusGuard will be documented in this file.
 - **Smithery registry** listing for agent ecosystem discoverability
 - **GitHub Actions CI** for build verification and Docker validation
 - **Auto-discovery** via `/.well-known/mcp/server-card.json` endpoint
+- **npm publication** — install globally via `npx sicarius-guard`
 - MIT License
+
+### Fixed
+- Cloud Run environment variables configured — Birdeye market intelligence and Helius wallet reputation now fully operational in production
+- Normalized `repository.url` in package.json to eliminate npm publish warnings
+

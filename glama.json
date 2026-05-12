@@ -51,5 +51,10 @@
       "enabled": true,
       "note": "Upstash Redis persistent rate limiting — 100 free calls/day per IP, consistent across scaled instances."
     }
-  }
+  },
+  "related_servers": [
+    "Pentagonal-ai/pentagonal",
+    "desk3/cryptocurrency-mcp-server",
+    "financial-datasets/mcp-server"
+  ]
 }
