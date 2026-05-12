@@ -2,6 +2,11 @@
 
 **Solana Token Safety Oracle for AI Agents & Trading Bots**
 
+[![sicarius-guard MCP server](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard/badges/card.svg)](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard)
+[![Score](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard/badges/score.svg)](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Smithery](https://smithery.ai/badge/sicarius-guard)](https://smithery.ai/server/chronolapse411/sicarius-guard)
+
 Real-time token safety analysis combining byte-level on-chain inspection, market intelligence, and wallet reputation scoring. Built for autonomous AI agents, MCP-enabled LLMs, and trading infrastructure.
 
 > *"Don't trade blind. Query SicariusGuard before every swap."*

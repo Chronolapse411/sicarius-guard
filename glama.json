@@ -1,100 +1,46 @@
 {
+  "$schema": "https://glama.ai/schemas/server.json",
   "name": "sicarius-guard",
-  "display_name": "SicariusGuard",
   "description": "Solana Token Safety Oracle — 7-layer rug pull, honeypot, and market risk analysis for AI agents and trading bots.",
-  "icon": "",
-  "tags": ["solana", "blockchain", "security", "cryptocurrency", "defi", "token-safety", "mcp-server"],
-  "category": "security",
-  "homepage": "https://github.com/Chronolapse411/sicarius-guard",
-  "repository": "https://github.com/Chronolapse411/sicarius-guard",
-  "license": "MIT",
-  "author": {
-    "name": "Chronolapse411",
-    "email": "chronolapse411@gmail.com",
-    "url": "https://github.com/Chronolapse411"
-  },
-  "tools": [
-    {
-      "name": "check_token_safety",
-      "description": "Analyze a Solana SPL token for rug pull, honeypot, and safety risks. Performs 5 checks: mint authority, freeze authority, Token-2022 extensions, honeypot simulation, and holder concentration.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "mint": { "type": "string", "description": "Solana token mint address (base58)" }
-        },
-        "required": ["mint"]
-      }
+  "type": "mcp_server",
+  "maintainers": ["Chronolapse411"],
+  "status": "stable",
+  "framework": "@modelcontextprotocol/sdk 1.29",
+  "tools": 7,
+  "transport": ["stdio"],
+  "keywords": [
+    "solana", "blockchain", "security", "cryptocurrency", "defi",
+    "token-safety", "mcp-server", "rug-pull", "honeypot", "x402",
+    "ai-agents", "trading-bots", "agentic"
+  ],
+  "features": {
+    "token_safety_analysis": {
+      "enabled": true,
+      "note": "5-layer on-chain rug pull detection (mint auth, freeze, Token-2022, honeypot, holders)"
     },
-    {
-      "name": "check_honeypot",
-      "description": "Check if a Solana token is a honeypot by simulating a sell order through Jupiter. Zero cost — only requests a quote.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "mint": { "type": "string", "description": "Solana token mint address" }
-        },
-        "required": ["mint"]
-      }
+    "honeypot_detection": {
+      "enabled": true,
+      "note": "Jupiter DEX sell simulation — zero cost, quote-only"
     },
-    {
-      "name": "check_holder_concentration",
-      "description": "Analyze token holder distribution. Detects if supply is concentrated in a few wallets (rug pull indicator).",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "mint": { "type": "string", "description": "Solana token mint address" }
-        },
-        "required": ["mint"]
-      }
+    "market_intelligence": {
+      "enabled": true,
+      "note": "Birdeye integration for real-time price, volume, liquidity, and market risk flags"
     },
-    {
-      "name": "full_token_scan",
-      "description": "Most comprehensive 7-layer safety analysis: on-chain byte-level inspection + Birdeye market intelligence + wallet reputation. Use for high-value trades.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "mint": { "type": "string", "description": "Solana token mint address" }
-        },
-        "required": ["mint"]
-      }
+    "wallet_reputation": {
+      "enabled": true,
+      "note": "Helius DAS identity and funding chain analysis"
     },
-    {
-      "name": "get_wallet_reputation",
-      "description": "Investigate a Solana wallet's reputation using Helius DAS identity data and funding chain analysis.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "address": { "type": "string", "description": "Solana wallet address (base58)" }
-        },
-        "required": ["address"]
-      }
+    "batch_scanning": {
+      "enabled": true,
+      "note": "Scan up to 10 tokens in parallel for portfolio-level risk assessment"
     },
-    {
-      "name": "get_market_intel",
-      "description": "Get real-time market intelligence from Birdeye: price, 24h volume, liquidity, market cap, holder count, and risk flags.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "mint": { "type": "string", "description": "Solana token mint address" }
-        },
-        "required": ["mint"]
-      }
+    "x402_payments": {
+      "enabled": true,
+      "note": "Micropayment protocol for pay-per-scan monetization (0.001-0.002 SOL)"
     },
-    {
-      "name": "batch_scan",
-      "description": "Scan up to 10 Solana tokens in parallel for portfolio-level risk assessment. Returns verdicts for each token.",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "mints": {
-            "type": "array",
-            "items": { "type": "string" },
-            "maxItems": 10,
-            "description": "Array of Solana token mint addresses (max 10)"
-          }
-        },
-        "required": ["mints"]
-      }
+    "rate_limiting": {
+      "enabled": true,
+      "note": "Upstash Redis persistent rate limiting — 100 free calls/day per IP"
     }
-  ]
+  }
 }
