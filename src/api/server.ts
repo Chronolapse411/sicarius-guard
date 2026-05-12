@@ -245,7 +245,6 @@ footer a{color:var(--accent2);text-decoration:none}
 </footer>
 </div>
 <script>
-const BASE='${baseUrl}';
 document.getElementById('mint-input').addEventListener('keydown',e=>{if(e.key==='Enter')scanToken()});
 async function scanToken(){
   const mint=document.getElementById('mint-input').value.trim();
@@ -253,7 +252,7 @@ async function scanToken(){
   if(!mint||mint.length<32){out.textContent='Enter a valid Solana mint address';return}
   out.innerHTML='<span style="color:var(--accent2)">Scanning...</span>';
   try{
-    const r=await fetch(BASE+'/v1/scan/'+mint);
+    const r=await fetch('/v1/scan/'+mint);
     const d=await r.json();
     if(d.combined){
       const c=d.combined;
