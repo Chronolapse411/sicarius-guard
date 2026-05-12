@@ -10,6 +10,40 @@
 
 import { Connection, PublicKey } from '@solana/web3.js';
 
+/**
+ * Retry an async operation with exponential backoff.
+ * Specifically handles Helius RPC 429 (Too Many Requests) errors.
+ *
+ * @param fn           Async function to retry
+ * @param maxRetries   Maximum number of retry attempts
+ * @param baseDelayMs  Initial delay in milliseconds (doubles each retry)
+ */
+async function retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelayMs: number = 1000,
+): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (err: unknown) {
+            lastError = err;
+            const msg = err instanceof Error ? err.message : String(err);
+            const isRateLimit = msg.includes('429') || msg.includes('Too Many Requests') || msg.includes('overloaded');
+
+            if (!isRateLimit || attempt >= maxRetries) {
+                throw err;
+            }
+
+            const delay = baseDelayMs * Math.pow(2, attempt);
+            console.warn(`[HOLDER] Rate limited (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+    throw lastError;
+}
+
 export interface HolderResult {
     concentrated: boolean;
     reason:       string;
@@ -43,8 +77,12 @@ export async function analyzeHolders(
     try {
         const mintPk = new PublicKey(mint);
 
-        // Get the 20 largest token accounts for this mint
-        const largestAccounts = await connection.getTokenLargestAccounts(mintPk);
+        // Get the 20 largest token accounts (with exponential backoff for 429s)
+        const largestAccounts = await retryWithBackoff(
+            () => connection.getTokenLargestAccounts(mintPk),
+            3,     // max retries
+            1000,  // initial delay ms
+        );
 
         if (!largestAccounts.value || largestAccounts.value.length === 0) {
             return {
