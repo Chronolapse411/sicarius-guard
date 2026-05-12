@@ -253,6 +253,136 @@ export function createMCPServer(): McpServer {
         },
     );
 
+    // ── Tool: get_wallet_reputation ────────────────────────────────────────
+    server.tool(
+        'get_wallet_reputation',
+        `Analyze a Solana wallet's reputation using Helius DAS identity data and funding chain analysis. Checks deployer/wallet age, funding source identity, and known entity classification. Use this to evaluate whether a token deployer or counterparty is trustworthy before transacting.`,
+        {
+            address: z.string().describe('Solana wallet address to investigate (base58)'),
+        },
+        async ({ address }) => {
+            try {
+                const result = await enrichCreatorReputation(address, HELIUS_API_KEY);
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify(result, null, 2),
+                    }],
+                };
+            } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : String(e);
+                return {
+                    content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }],
+                    isError: true,
+                };
+            }
+        },
+    );
+
+    // ── Tool: get_market_intel ────────────────────────────────────────────
+    server.tool(
+        'get_market_intel',
+        `Get real-time market intelligence for a Solana token from Birdeye. Returns price, 24h volume, liquidity depth, market cap, holder count, and market risk flags (wash trading, low liquidity, extreme volume ratios). Use this for trade sizing and market health assessment.`,
+        {
+            mint: z.string().describe('Solana token mint address'),
+        },
+        async ({ mint }) => {
+            try {
+                const result = await enrichWithBirdeye(mint, BIRDEYE_API_KEY);
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify({
+                            overview: result.overview ? {
+                                price: result.overview.price,
+                                volume24h: result.overview.volume24h,
+                                liquidity: result.overview.liquidity,
+                                marketCap: result.overview.marketCap,
+                                holders: result.overview.holder,
+                                priceChange24h: result.overview.priceChange24h,
+                            } : null,
+                            marketRisk: result.marketRisk,
+                            tradeData: result.tradeData ?? null,
+                        }, null, 2),
+                    }],
+                };
+            } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : String(e);
+                return {
+                    content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }],
+                    isError: true,
+                };
+            }
+        },
+    );
+
+    // ── Tool: batch_scan ──────────────────────────────────────────────────
+    server.tool(
+        'batch_scan',
+        `Scan multiple Solana tokens in a single call for portfolio-level risk assessment. Runs full_token_scan on each mint in parallel (max 10 per batch). Returns an array of results with verdicts for each token. Use this when evaluating a portfolio, watchlist, or multiple tokens from a pool discovery.`,
+        {
+            mints: z.array(z.string()).max(10).describe('Array of Solana token mint addresses to scan (max 10)'),
+        },
+        async ({ mints }) => {
+            try {
+                const results = await Promise.allSettled(
+                    mints.map(async (mint) => {
+                        const [safety, honeypot, holders, birdeye, walletIntel] = await Promise.all([
+                            analyzeTokenSafety(connection, mint, undefined, false),
+                            checkHoneypot(mint),
+                            analyzeHolders(connection, mint),
+                            enrichWithBirdeye(mint, BIRDEYE_API_KEY),
+                            enrichCreatorReputation(mint, HELIUS_API_KEY),
+                        ]);
+
+                        let onChainScore = safety.riskScore;
+                        if (honeypot.isHoneypot) onChainScore = Math.min(onChainScore + 30, 100);
+                        if (holders.concentrated) onChainScore = Math.min(onChainScore + 15, 100);
+
+                        const reputationScore = walletIntel.reputation?.riskScore ?? 0;
+                        const marketScore = birdeye.marketRisk.score;
+                        const finalScore = Math.round(
+                            onChainScore * 0.60 + marketScore * 0.25 + reputationScore * 0.15
+                        );
+                        const verdict = finalScore === 0 ? 'SAFE'
+                            : finalScore <= 15 ? 'CAUTION'
+                            : finalScore <= 50 ? 'HIGH_RISK'
+                            : 'CRITICAL';
+
+                        return {
+                            mint,
+                            safe: safety.safe && !honeypot.isHoneypot && !holders.concentrated && marketScore < 30,
+                            finalScore,
+                            verdict,
+                            honeypot: honeypot.isHoneypot,
+                            liquidity: birdeye.overview?.liquidity ?? null,
+                            marketFlags: birdeye.marketRisk.flags,
+                            walletAge: walletIntel.reputation?.creatorAge ?? null,
+                        };
+                    })
+                );
+
+                const output = results.map((r, i) => {
+                    if (r.status === 'fulfilled') return r.value;
+                    return { mint: mints[i], error: r.reason?.message ?? String(r.reason) };
+                });
+
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify({ scanned: output.length, results: output }, null, 2),
+                    }],
+                };
+            } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : String(e);
+                return {
+                    content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }],
+                    isError: true,
+                };
+            }
+        },
+    );
+
     return server;
 }
 
