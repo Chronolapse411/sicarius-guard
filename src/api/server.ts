@@ -105,6 +105,31 @@ export function createApp(): express.Express {
         });
     });
 
+    // MCP Server Card for Smithery/registry discovery
+    app.get('/.well-known/mcp/server-card.json', (_req, res) => {
+        res.json({
+            name: 'sicarius-guard',
+            version: '1.0.0',
+            description: 'Solana Token Safety Oracle — 7-layer rug pull, honeypot, and market risk analysis for AI agents and trading bots.',
+            homepage: 'https://github.com/Chronolapse411/sicarius-guard',
+            author: 'Chronolapse411',
+            capabilities: {
+                tools: true,
+                resources: false,
+                prompts: false,
+            },
+            tools: [
+                { name: 'check_token_safety', description: 'Analyze a Solana SPL token for rug pull, honeypot, and safety risks.' },
+                { name: 'check_honeypot', description: 'Simulate a sell via Jupiter to detect honeypot tokens.' },
+                { name: 'check_holder_concentration', description: 'Analyze token holder distribution for rug pull indicators.' },
+                { name: 'full_token_scan', description: 'Comprehensive 7-layer safety analysis with Birdeye market intelligence.' },
+                { name: 'get_wallet_reputation', description: 'Investigate wallet reputation via Helius DAS identity data.' },
+                { name: 'get_market_intel', description: 'Real-time market data from Birdeye (price, volume, liquidity).' },
+                { name: 'batch_scan', description: 'Scan up to 10 tokens in parallel for portfolio-level risk assessment.' },
+            ],
+        });
+    });
+
     // ── Landing Page ─────────────────────────────────────────────────────────
     app.get('/', (_req, res) => {
         const baseUrl = `${_req.protocol}://${_req.get('host')}`;
