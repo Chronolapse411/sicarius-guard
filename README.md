@@ -235,12 +235,12 @@ SicariusGuard implements the **x402 HTTP Payment Required** protocol for machine
 
 ### Pricing
 
-| Endpoint | Price (SOL) | ~USD |
-|----------|------------|------|
-| `/v1/check` | 0.001 | ~$0.17 |
-| `/v1/scan` | 0.002 | ~$0.34 |
-| `/v1/honeypot` | 0.0005 | ~$0.085 |
-| `/v1/holders` | 0.0005 | ~$0.085 |
+| Endpoint | Price (SOL) |
+|----------|------------|
+| `/v1/check` | 0.001 |
+| `/v1/scan` | 0.002 |
+| `/v1/honeypot` | 0.0005 |
+| `/v1/holders` | 0.0005 |
 
 ### Example (Paid Request)
 
@@ -248,8 +248,8 @@ SicariusGuard implements the **x402 HTTP Payment Required** protocol for machine
 # Step 1: Get pricing
 curl http://localhost:3400/v1/pricing
 
-# Step 2: Send SOL to treasury (via any wallet/CLI)
-solana transfer 5QMsfrUcaJ8WgD98MD8NJ3aEHvYz443QqFEJqGXbyLFM 0.002
+# Step 2: Send SOL to treasury address (shown in /v1/pricing response)
+solana transfer <TREASURY_ADDRESS> 0.002
 
 # Step 3: Use tx signature as payment proof
 curl -X POST http://localhost:3400/v1/scan \
@@ -271,7 +271,6 @@ curl -X POST http://localhost:3400/v1/scan \
 | Tier | Auth Method | Rate Limit |
 |------|------------|------------|
 | **Free** | None | 100 calls/day per IP |
-| **API Key** | `x-api-key` header | Unlimited |
 | **x402 Pay-Per-Call** | `X-PAYMENT` header (SOL tx sig) | Unlimited |
 
 ## 🔧 Configuration
@@ -282,21 +281,19 @@ curl -X POST http://localhost:3400/v1/scan \
 | `PORT` | API server port | `3400` |
 | `HOST` | Bind address | `0.0.0.0` |
 | `BIRDEYE_API_KEY` | Birdeye API key (optional, enriches scans) | — |
-| `TREASURY_WALLET` | SOL payment recipient | `5QMsfrU...LFM` |
+| `TREASURY_WALLET` | SOL payment recipient (x402) | — |
 | `CACHE_TTL_SECONDS` | Cache duration | `300` |
 | `FREE_TIER_CALLS_PER_DAY` | Free tier rate limit | `100` |
 
 ## 📊 Performance
 
-Tested with 50-token bulk scan (mainnet, 2026-05-11):
+Tested with 50-token bulk scan on Solana mainnet:
 
 | Metric | Value |
 |--------|-------|
 | Success rate | **50/50 (100%)** |
-| Avg latency | 5.4s |
-| API calls per scan | 2 Birdeye + 4 Helius |
-| Cost per scan | ~$0.0005 (API provider costs) |
-| Profit margin (x402) | **99.7%** per scan |
+| Avg response time | 5.4s |
+| x402 payment verification | Verified live on mainnet |
 
 ## 📦 Tech Stack
 
