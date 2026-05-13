@@ -105,6 +105,9 @@ export function createApp(): express.Express {
         });
     });
 
+    // Favicon — return 204 to prevent crawler 404s
+    app.get('/favicon.ico', (_req, res) => res.status(204).end());
+
     // robots.txt for search engine crawlers
     app.get('/robots.txt', (_req, res) => {
         res.type('text/plain').send([
