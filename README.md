@@ -354,5 +354,7 @@ MIT — Built by [Chronolapse411](https://github.com/Chronolapse411)
 - **Live API:** [sicarius-guard-640545264957.us-east4.run.app](https://sicarius-guard-640545264957.us-east4.run.app/health)
 - **GitHub:** [github.com/Chronolapse411/sicarius-guard](https://github.com/Chronolapse411/sicarius-guard)
 - **Glama:** [glama.ai/mcp/servers/Chronolapse411/sicarius-guard](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard)
+- **Dev.to:** [How I Built a 7-Layer Token Safety Oracle](https://dev.to/chronolapse411/how-i-built-a-7-layer-token-safety-oracle-for-ai-agents-on-solana-2p40)
+- **Twitter/X:** [@chronolapse411](https://x.com/chronolapse411)
 - **Author:** [@Chronolapse411](https://github.com/Chronolapse411)
 
