@@ -105,6 +105,28 @@ export function createApp(): express.Express {
         });
     });
 
+    // robots.txt for search engine crawlers
+    app.get('/robots.txt', (_req, res) => {
+        res.type('text/plain').send([
+            'User-agent: *',
+            'Allow: /',
+            'Disallow: /v1/',
+            '',
+            `Sitemap: ${_req.protocol}://${_req.get('host')}/sitemap.xml`,
+        ].join('\n'));
+    });
+
+    // Sitemap for search engine indexing
+    app.get('/sitemap.xml', (_req, res) => {
+        const base = `${_req.protocol}://${_req.get('host')}`;
+        res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${base}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>${base}/health</loc><changefreq>always</changefreq><priority>0.5</priority></url>
+  <url><loc>${base}/v1/pricing</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+</urlset>`);
+    });
+
     // MCP Server Card for Smithery/registry discovery
     app.get('/.well-known/mcp/server-card.json', (_req, res) => {
         res.json({
