@@ -2,10 +2,13 @@
 
 **Solana Token Safety Oracle for AI Agents & Trading Bots**
 
+[![GitHub stars](https://img.shields.io/github/stars/Chronolapse411/sicarius-guard?style=social)](https://github.com/Chronolapse411/sicarius-guard)
+[![npm version](https://img.shields.io/npm/v/sicarius-guard.svg)](https://www.npmjs.com/package/sicarius-guard)
+[![npm downloads](https://img.shields.io/npm/dt/sicarius-guard.svg)](https://www.npmjs.com/package/sicarius-guard)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+
 [![sicarius-guard MCP server](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard/badges/card.svg)](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard)
 [![Score](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard/badges/score.svg)](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard)
-[![npm version](https://img.shields.io/npm/v/sicarius-guard.svg)](https://www.npmjs.com/package/sicarius-guard)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Smithery](https://smithery.ai/badge/sicarius-guard)](https://smithery.ai/server/chronolapse411/sicarius-guard)
 
 Real-time token safety analysis combining byte-level on-chain inspection, market intelligence, and wallet reputation scoring. Built for autonomous AI agents, MCP-enabled LLMs, and trading infrastructure.
@@ -20,6 +23,21 @@ curl https://sicarius-guard-640545264957.us-east4.run.app/v1/scan/DezXAZ8z7PnrnR
 ```
 
 ---
+
+## 📑 Table of Contents
+
+- [What It Does](#-what-it-does)
+- [Quick Start](#-quick-start)
+- [API Endpoints](#-api-endpoints)
+- [MCP Server (for AI Agents)](#-mcp-server-for-ai-agents)
+- [Architecture](#️-architecture)
+- [x402 Payment Protocol](#-x402-payment-protocol)
+- [Configuration](#-configuration)
+- [Performance](#-performance)
+- [Tech Stack](#-tech-stack)
+- [Why SicariusGuard?](#️-why-sicariusguard)
+- [Related MCP Servers](#-related-mcp-servers)
+- [Links](#-links)
 
 ## 🔍 What It Does
 
@@ -167,7 +185,51 @@ SicariusGuard exposes tools via the **Model Context Protocol (MCP)**, enabling L
 | `get_market_intel` | Birdeye market data: price, volume, liquidity, risk flags | ✅ |
 | `batch_scan` | Parallel 7-layer scan of up to 10 tokens per call | ✅ |
 
-### Usage with Claude Desktop / Cursor
+### Install via npx (Recommended)
+
+```bash
+# Run directly — no cloning required
+npx sicarius-guard
+```
+
+### Install in Claude Code
+
+```bash
+claude mcp add sicarius-guard -- npx -y sicarius-guard
+```
+
+### Install in Cursor
+
+[![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=sicarius-guard&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInNpY2FyaXVzLWd1YXJkIl19)
+
+Or manually add to your Cursor MCP config:
+
+```json
+{
+  "mcpServers": {
+    "sicarius-guard": {
+      "command": "npx",
+      "args": ["-y", "sicarius-guard"],
+      "env": {
+        "HELIUS_RPC_URL": "https://mainnet.helius-rpc.com/?api-key=YOUR_KEY",
+        "BIRDEYE_API_KEY": "your-birdeye-key"
+      }
+    }
+  }
+}
+```
+
+### Install in VS Code
+
+[<img src="https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=for-the-badge&logo=visualstudiocode" alt="Install in VS Code">](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522sicarius-guard%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522sicarius-guard%2522%255D%257D)
+
+Or via CLI:
+
+```bash
+code --add-mcp '{"name":"sicarius-guard","command":"npx","args":["-y","sicarius-guard"]}'
+```
+
+### Install from Source (Claude Desktop / Cursor)
 
 ```json
 {
@@ -183,13 +245,6 @@ SicariusGuard exposes tools via the **Model Context Protocol (MCP)**, enabling L
     }
   }
 }
-```
-
-### Usage via npx
-
-```bash
-# Run directly without cloning
-npx sicarius-guard
 ```
 
 ## 🏗️ Architecture
@@ -344,6 +399,12 @@ Build powerful agentic workflows by combining SicariusGuard with these complemen
 | [AgentForge](https://glama.ai/mcp/servers/agentforge/agentforge) | DeFi safety layer — SPL approval scans & contract registry | Check approvals → scan token safety with SicariusGuard |
 | [Financial Datasets](https://glama.ai/mcp/servers/financial-datasets/mcp-server) | Stock & market data for AI assistants | Cross-market correlation analysis |
 
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Chronolapse411/sicarius-guard&type=Date)](https://star-history.com/#Chronolapse411/sicarius-guard&Date)
+
+---
+
 ## 📄 License
 
 MIT — Built by [Chronolapse411](https://github.com/Chronolapse411)
@@ -354,7 +415,7 @@ MIT — Built by [Chronolapse411](https://github.com/Chronolapse411)
 - **Live API:** [sicarius-guard-640545264957.us-east4.run.app](https://sicarius-guard-640545264957.us-east4.run.app/health)
 - **GitHub:** [github.com/Chronolapse411/sicarius-guard](https://github.com/Chronolapse411/sicarius-guard)
 - **Glama:** [glama.ai/mcp/servers/Chronolapse411/sicarius-guard](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard)
+- **Smithery:** [smithery.ai/server/chronolapse411/sicarius-guard](https://smithery.ai/server/chronolapse411/sicarius-guard)
 - **Dev.to:** [How I Built a 7-Layer Token Safety Oracle](https://dev.to/chronolapse411/how-i-built-a-7-layer-token-safety-oracle-for-ai-agents-on-solana-2p40)
 - **Twitter/X:** [@chronolapse411](https://x.com/chronolapse411)
 - **Author:** [@Chronolapse411](https://github.com/Chronolapse411)
-
