@@ -119,4 +119,57 @@ Returns a dual risk score:
             required: ['mint'],
         },
     },
+
+    recon_deployer: {
+        name: 'recon_deployer',
+        description: `Perform a deep background investigation on a Solana wallet that deployed or controls a token. Returns a complete dossier including their token creation history, portfolio health, wallet age, funding genesis, and a Recidivism Score (0-100).
+
+Use this BEFORE trusting any new token — if the deployer has a history of abandoned or rugged tokens, the current token is likely another scam.
+
+Analysis pipeline:
+1. Portfolio enumeration — finds all fungible tokens the deployer controls or has created
+2. Health triage — classifies each token as alive, abandoned, or rugged
+3. Wallet genesis — identifies who funded the deployer and when
+4. Recidivism scoring — algorithmic risk assessment based on dead token ratio, deployment frequency, wallet age, and authority patterns
+
+Verdicts: CLEAN | SUSPICIOUS | SERIAL_DEPLOYER | LIKELY_SCAMMER
+
+This is a zero-cost check using DAS API and Enhanced Transactions (Helius Developer plan).`,
+        inputSchema: {
+            type: 'object' as const,
+            properties: {
+                address: {
+                    type: 'string',
+                    description: 'Solana wallet address of the token deployer to investigate',
+                },
+            },
+            required: ['address'],
+        },
+    },
+
+    check_nft: {
+        name: 'check_nft',
+        description: `Perform a safety analysis on a Solana NFT using on-chain DAS metadata and Magic Eden marketplace data. Detects counterfeit collections, unverified creators, wash-traded NFTs, burnt/frozen assets, excessive royalties, and pricing anomalies.
+
+Analyzes 7 risk signals:
+1. Collection verification — is the collection group verified on-chain?
+2. Creator verification — are the NFT creators verified?
+3. Metadata mutability — can the creator change the NFT's image/name after sale?
+4. Marketplace presence — is the NFT listed on Magic Eden? At what price?
+5. Collection health — floor price, volume, listing count
+6. Asset status — compressed, burnt, frozen
+7. Pricing anomalies — listed far above/below floor price
+
+Returns a JSON object with riskScore (0-100), verdict (SAFE/CAUTION/HIGH_RISK/CRITICAL), collection data, floor price, and per-signal flags. This is a read-only operation with no on-chain side effects. Use this for NFT safety checks; use check_token_safety for fungible SPL tokens instead.`,
+        inputSchema: {
+            type: 'object' as const,
+            properties: {
+                mint: {
+                    type: 'string',
+                    description: 'Solana NFT mint address to analyze (base58)',
+                },
+            },
+            required: ['mint'],
+        },
+    },
 } as const;

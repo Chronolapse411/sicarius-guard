@@ -12,10 +12,11 @@
  *   5. Server responds with data (200 OK)
  *
  * Pricing:
- *   /v1/check    → 0.001 SOL (~$0.15)
- *   /v1/scan     → 0.002 SOL (~$0.30) — includes Birdeye enrichment
- *   /v1/honeypot → 0.0005 SOL (~$0.07)
- *   /v1/holders  → 0.0005 SOL (~$0.07)
+ *   /v1/check     → 0.001 SOL (~$0.15)
+ *   /v1/scan      → 0.002 SOL (~$0.30) — includes Birdeye enrichment
+ *   /v1/honeypot  → 0.0005 SOL (~$0.07)
+ *   /v1/holders   → 0.0005 SOL (~$0.07)
+ *   /v1/nft-check → 0.001 SOL (~$0.15) — NFT safety check (ME + DAS)
  *
  * @author Chronolapse411
  */
@@ -32,18 +33,20 @@ const RPC_URL = process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.c
 // Price per endpoint in SOL
 // Keys are RELATIVE paths (req.path is relative when mounted via app.use('/v1', ...))
 const ENDPOINT_PRICING: Record<string, number> = {
-    '/check':   0.001,
-    '/scan':    0.002,
-    '/honeypot': 0.0005,
-    '/holders': 0.0005,
+    '/check':     0.001,
+    '/scan':      0.002,
+    '/honeypot':  0.0005,
+    '/holders':   0.0005,
+    '/nft-check': 0.001,
 };
 
 // Full-path pricing for external display (used in 402 responses and /v1/pricing)
 const DISPLAY_PRICING: Record<string, number> = {
-    '/v1/check':   0.001,
-    '/v1/scan':    0.002,
-    '/v1/honeypot': 0.0005,
-    '/v1/holders': 0.0005,
+    '/v1/check':     0.001,
+    '/v1/scan':      0.002,
+    '/v1/honeypot':  0.0005,
+    '/v1/holders':   0.0005,
+    '/v1/nft-check': 0.001,
 };
 
 // How long a payment is valid after confirmation (prevents replay)

@@ -1,11 +1,19 @@
 /**
  * SicariusGuard — Express REST API Server
  *
+ * v1.1.0: 11-layer analysis engine — adds LP lock detection,
+ * token age analysis, unified composite scoring, deployer recon,
+ * and NFT intelligence (Magic Eden + DAS).
+ *
  * Endpoints:
  *   POST /v1/check          — full token safety analysis
  *   POST /v1/honeypot       — honeypot-only check (Jupiter sell sim)
  *   POST /v1/holders        — holder concentration analysis
  *   GET  /v1/check/:mint    — convenience GET for simple checks
+ *   GET  /v1/lp-lock/:mint  — LP lock status check
+ *   GET  /v1/token-age/:mint — token age check
+ *   GET  /v1/deployer/:address — deployer reconnaissance
+ *   GET  /v1/nft-check/:mint — NFT safety check (ME + DAS)
  *   GET  /health            — health check
  *
  * @author Chronolapse411
@@ -22,6 +30,19 @@ import { ResultCache } from './cache.js';
 import { enrichWithBirdeye, type BirdeyeEnrichment } from '../core/birdeye.js';
 import { enrichCreatorReputation, extractHeliusApiKey, type WalletIntelligence } from '../core/helius_wallet.js';
 import { x402PaymentMiddleware, cleanupPaymentCache, getPricing, getPaymentStats } from './x402.js';
+import { analyzeLpLock, type LpLockResult } from '../core/lp_lock.js';
+import { analyzeTokenAge, type TokenAgeResult } from '../core/token_age.js';
+import { reconDeployer, type DeployerDossier } from '../core/deployer_recon.js';
+import { analyzeNft, type NftCheckResult } from '../core/nft_intel.js';
+import {
+    computeCompositeScore,
+    buildLightweightLayers,
+    buildFullLayers,
+    buildSummary,
+    LIGHTWEIGHT_WEIGHTS,
+    DEFAULT_WEIGHTS,
+    type LayerScores,
+} from '../core/scoring.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,11 +50,14 @@ interface FullCheckResult {
     safety:   SafetyResult;
     honeypot: HoneypotResult;
     holders:  HolderResult;
+    lpLock:   LpLockResult;
+    tokenAge: TokenAgeResult;
     combined: {
         safe:      boolean;
         riskScore: number;
         verdict:   string;
         summary:   string;
+        breakdown: LayerScores;
     };
 }
 
@@ -41,8 +65,11 @@ interface FullScanResult {
     safety:    SafetyResult;
     honeypot:  HoneypotResult;
     holders:   HolderResult;
+    lpLock:    LpLockResult;
+    tokenAge:  TokenAgeResult;
     birdeye:   BirdeyeEnrichment;
     walletIntel: WalletIntelligence;
+    deployerRecon: DeployerDossier | null;
     combined:  {
         safe:           boolean;
         riskScore:      number;
@@ -51,6 +78,7 @@ interface FullScanResult {
         finalScore:     number;
         verdict:        string;
         summary:        string;
+        breakdown:      LayerScores;
     };
 }
 
@@ -68,8 +96,12 @@ const connection = new Connection(RPC_URL, 'finalized');
 const safetyCache   = new ResultCache<SafetyResult>(CACHE_TTL);
 const honeypotCache = new ResultCache<HoneypotResult>(CACHE_TTL);
 const holderCache   = new ResultCache<HolderResult>(CACHE_TTL);
-const fullCache     = new ResultCache<FullCheckResult>(CACHE_TTL);
-const scanCache     = new ResultCache<FullScanResult>(CACHE_TTL);
+const lpLockCache   = new ResultCache<LpLockResult>(CACHE_TTL);
+const tokenAgeCache   = new ResultCache<TokenAgeResult>(CACHE_TTL);
+const reconCache      = new ResultCache<DeployerDossier>(CACHE_TTL);
+const fullCache       = new ResultCache<FullCheckResult>(CACHE_TTL);
+const scanCache       = new ResultCache<FullScanResult>(CACHE_TTL);
+const nftCache        = new ResultCache<NftCheckResult>(CACHE_TTL);
 
 const BIRDEYE_API_KEY = process.env.BIRDEYE_API_KEY || '';
 const HELIUS_API_KEY  = extractHeliusApiKey(RPC_URL);
@@ -94,12 +126,15 @@ export function createApp(): express.Express {
         res.json({
             status: 'ok',
             service: 'sicarius-guard',
-            version: '1.0.0',
+            version: '1.1.0',
             uptime: process.uptime(),
             cacheSize: {
                 safety: safetyCache.size(),
                 honeypot: honeypotCache.size(),
                 holders: holderCache.size(),
+                lpLock: lpLockCache.size(),
+                tokenAge: tokenAgeCache.size(),
+                nftCheck: nftCache.size(),
                 full: fullCache.size(),
             },
         });
@@ -134,8 +169,8 @@ export function createApp(): express.Express {
     app.get('/.well-known/mcp/server-card.json', (_req, res) => {
         res.json({
             name: 'sicarius-guard',
-            version: '1.0.0',
-            description: 'Solana Token Safety Oracle — 7-layer rug pull, honeypot, and market risk analysis for AI agents and trading bots.',
+            version: '1.1.0',
+            description: 'Solana Token Safety Oracle — 10-layer rug pull, honeypot, LP lock, and market risk analysis for AI agents and trading bots.',
             homepage: 'https://github.com/Chronolapse411/sicarius-guard',
             author: 'Chronolapse411',
             capabilities: {
@@ -144,13 +179,15 @@ export function createApp(): express.Express {
                 prompts: false,
             },
             tools: [
-                { name: 'check_token_safety', description: 'Analyze a Solana SPL token for rug pull, honeypot, and safety risks. 5 checks with combined risk score. Read-only, no side effects.' },
+                { name: 'check_token_safety', description: 'Analyze a Solana SPL token for rug pull, honeypot, and safety risks. 8 checks with combined risk score. Read-only, no side effects.' },
                 { name: 'check_honeypot', description: 'Simulate a sell via Jupiter DEX to detect honeypot tokens. Zero cost, quote-only, no gas.' },
                 { name: 'check_holder_concentration', description: 'Analyze token holder distribution for rug pull indicators. Flags top-heavy supply concentration.' },
-                { name: 'full_token_scan', description: 'Comprehensive 7-layer safety analysis: on-chain + Birdeye market intel + Helius wallet reputation.' },
+                { name: 'check_lp_lock', description: 'Check LP burn status and locker detection for Raydium pools.' },
+                { name: 'check_token_age', description: 'Determine token creation timestamp and age category.' },
+                { name: 'full_token_scan', description: 'Comprehensive 10-layer safety analysis: on-chain + LP lock + token age + Birdeye market intel + Helius wallet reputation.' },
                 { name: 'get_wallet_reputation', description: 'Investigate wallet reputation via Helius DAS identity data and funding chain analysis.' },
                 { name: 'get_market_intel', description: 'Real-time market data from Birdeye (price, volume, liquidity, market risk flags).' },
-                { name: 'batch_scan', description: 'Scan up to 10 tokens in parallel for portfolio-level risk assessment. Full 7-layer analysis each.' },
+                { name: 'batch_scan', description: 'Scan up to 10 tokens in parallel for portfolio-level risk assessment. Full 10-layer analysis each.' },
             ],
         });
     });
@@ -234,19 +271,21 @@ footer a{color:var(--accent2);text-decoration:none}
 </div>
 
 <section>
-  <h2>7-Layer Safety Analysis</h2>
+  <h2>10-Layer Safety Analysis</h2>
   <div class="layers">
     <div class="layer"><strong>🔓 Mint Authority</strong><p>Raw SPL byte inspection — can deployer print tokens?</p></div>
     <div class="layer"><strong>🧊 Freeze Authority</strong><p>SPL offset 46 — can deployer freeze wallets?</p></div>
     <div class="layer"><strong>⚠️ Token-2022</strong><p>Extension scan — PermanentDelegate, TransferHook</p></div>
     <div class="layer"><strong>🍯 Honeypot</strong><p>Jupiter sell simulation — can you actually sell?</p></div>
     <div class="layer"><strong>📊 Holders</strong><p>Concentration analysis — top wallets vs supply</p></div>
+    <div class="layer"><strong>🔒 LP Lock</strong><p>Raydium pool decode — LP burned or in locker?</p></div>
+    <div class="layer"><strong>⏰ Token Age</strong><p>Creation timestamp — newborn, young, or mature?</p></div>
     <div class="layer"><strong>📈 Market Intel</strong><p>Birdeye API — liquidity, volume, wash trading</p></div>
     <div class="layer"><strong>🔎 Wallet Rep</strong><p>Helius Identity — deployer funding chain analysis</p></div>
   </div>
 
   <div class="scoring">
-    finalScore = (onChain × 0.60) + (market × 0.25) + (reputation × 0.15)<br>
+    finalScore = (onChain × 0.45) + (lpLock × 0.15) + (age × 0.05) + (market × 0.22) + (rep × 0.13)<br>
     <span style="color:var(--green)">0 SAFE</span> · <span style="color:var(--yellow)">1-15 CAUTION</span> · <span style="color:var(--red)">16-50 HIGH_RISK</span> · <span style="color:#ff4444">51-100 CRITICAL</span>
   </div>
 </section>
@@ -374,37 +413,41 @@ async function scanToken(){
             }
 
             // Run all checks in parallel
-            const [safety, honeypot, holders] = await Promise.all([
+            const [safety, honeypot, holders, lpLock, tokenAge] = await Promise.all([
                 analyzeTokenSafety(connection, mint, txInfo, isPumpSwap ?? false),
                 checkHoneypot(mint),
                 analyzeHolders(connection, mint),
+                analyzeLpLock(connection, mint),
+                analyzeTokenAge(connection, mint),
             ]);
 
-            // Combine scores
-            let combinedScore = safety.riskScore;
-            if (honeypot.isHoneypot) combinedScore = Math.min(combinedScore + 30, 100);
-            if (holders.concentrated) combinedScore = Math.min(combinedScore + 15, 100);
+            // Build on-chain sub-score
+            let onChainScore = safety.riskScore;
+            if (honeypot.isHoneypot) onChainScore = Math.min(onChainScore + 30, 100);
+            if (holders.concentrated) onChainScore = Math.min(onChainScore + 15, 100);
 
-            const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated;
-            const verdict = combinedScore === 0 ? 'SAFE'
-                : combinedScore <= 15 ? 'CAUTION'
-                : combinedScore <= 50 ? 'HIGH_RISK'
-                : 'CRITICAL';
-
-            const summaryParts: string[] = [];
-            if (!safety.safe) summaryParts.push(safety.reason);
-            if (honeypot.isHoneypot) summaryParts.push('Honeypot detected');
-            if (holders.concentrated) summaryParts.push(holders.reason);
+            const layers = buildLightweightLayers(onChainScore, lpLock.riskScore, tokenAge.riskScore);
+            const composite = computeCompositeScore(layers, LIGHTWEIGHT_WEIGHTS);
+            const summary = buildSummary(composite, {
+                safetyReason: !safety.safe ? safety.reason : undefined,
+                honeypotDetected: honeypot.isHoneypot,
+                holderReason: holders.concentrated ? holders.reason : undefined,
+                lpFlags: lpLock.flags,
+                ageFlags: tokenAge.flags,
+            });
 
             const result: FullCheckResult = {
                 safety,
                 honeypot,
                 holders,
+                lpLock,
+                tokenAge,
                 combined: {
-                    safe: combinedSafe,
-                    riskScore: combinedScore,
-                    verdict,
-                    summary: combinedSafe ? 'All checks passed' : summaryParts.join('; '),
+                    safe: composite.safe,
+                    riskScore: composite.finalScore,
+                    verdict: composite.verdict,
+                    summary,
+                    breakdown: composite.breakdown,
                 },
             };
 
@@ -434,35 +477,40 @@ async function scanToken(){
             return;
         }
 
-        const [safety, honeypot, holders] = await Promise.all([
+        const [safety, honeypot, holders, lpLock, tokenAge] = await Promise.all([
             analyzeTokenSafety(connection, mint),
             checkHoneypot(mint),
             analyzeHolders(connection, mint),
+            analyzeLpLock(connection, mint),
+            analyzeTokenAge(connection, mint),
         ]);
 
-        let combinedScore = safety.riskScore;
-        if (honeypot.isHoneypot) combinedScore = Math.min(combinedScore + 30, 100);
-        if (holders.concentrated) combinedScore = Math.min(combinedScore + 15, 100);
+        let onChainScore = safety.riskScore;
+        if (honeypot.isHoneypot) onChainScore = Math.min(onChainScore + 30, 100);
+        if (holders.concentrated) onChainScore = Math.min(onChainScore + 15, 100);
 
-        const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated;
-        const verdict = combinedScore === 0 ? 'SAFE'
-            : combinedScore <= 15 ? 'CAUTION'
-            : combinedScore <= 50 ? 'HIGH_RISK'
-            : 'CRITICAL';
+        const layers = buildLightweightLayers(onChainScore, lpLock.riskScore, tokenAge.riskScore);
+        const composite = computeCompositeScore(layers, LIGHTWEIGHT_WEIGHTS);
+        const summary = buildSummary(composite, {
+            safetyReason: !safety.safe ? safety.reason : undefined,
+            honeypotDetected: honeypot.isHoneypot,
+            holderReason: holders.concentrated ? holders.reason : undefined,
+            lpFlags: lpLock.flags,
+            ageFlags: tokenAge.flags,
+        });
 
         const result: FullCheckResult = {
             safety,
             honeypot,
             holders,
+            lpLock,
+            tokenAge,
             combined: {
-                safe: combinedSafe,
-                riskScore: combinedScore,
-                verdict,
-                summary: combinedSafe ? 'All checks passed' : [
-                    !safety.safe ? safety.reason : '',
-                    honeypot.isHoneypot ? 'Honeypot detected' : '',
-                    holders.concentrated ? holders.reason : '',
-                ].filter(Boolean).join('; '),
+                safe: composite.safe,
+                riskScore: composite.finalScore,
+                verdict: composite.verdict,
+                summary,
+                breakdown: composite.breakdown,
             },
         };
 
@@ -553,64 +601,71 @@ async function scanToken(){
                 } catch { /* best-effort */ }
             }
 
-            // Run ALL checks in parallel — on-chain + Birdeye + Helius Wallet Intel
-            const [safety, honeypot, holders, birdeye, walletIntel] = await Promise.all([
+            // Run ALL checks in parallel — on-chain + LP + age + Birdeye + Helius
+            const [safety, honeypot, holders, birdeye, walletIntel, lpLock, tokenAge] = await Promise.all([
                 analyzeTokenSafety(connection, mint, txInfo, isPumpSwap ?? false),
                 checkHoneypot(mint),
                 analyzeHolders(connection, mint),
                 enrichWithBirdeye(mint, BIRDEYE_API_KEY),
-                enrichCreatorReputation(mint, HELIUS_API_KEY),  // Look up mint in Orb identity DB
+                enrichCreatorReputation(mint, HELIUS_API_KEY),
+                analyzeLpLock(connection, mint),
+                analyzeTokenAge(connection, mint),
             ]);
 
-            // Combine on-chain score
+            // Build on-chain sub-score
             let onChainScore = safety.riskScore;
             if (honeypot.isHoneypot) onChainScore = Math.min(onChainScore + 30, 100);
             if (holders.concentrated) onChainScore = Math.min(onChainScore + 15, 100);
 
-            // Reputation score from Helius wallet intelligence
             const reputationScore = walletIntel.reputation?.riskScore ?? 0;
-
-            // Weighted final score: 60% on-chain, 25% market data, 15% reputation
-            const marketScore = birdeye.marketRisk.score;
-            const finalScore = Math.round(
-                onChainScore * 0.60 +
-                marketScore * 0.25 +
-                reputationScore * 0.15
+            const layers = buildFullLayers(
+                onChainScore, lpLock.riskScore, tokenAge.riskScore,
+                birdeye.marketRisk.score, reputationScore,
             );
+            const composite = computeCompositeScore(layers, DEFAULT_WEIGHTS);
+            const summary = buildSummary(composite, {
+                safetyReason: !safety.safe ? safety.reason : undefined,
+                honeypotDetected: honeypot.isHoneypot,
+                holderReason: holders.concentrated ? holders.reason : undefined,
+                lpFlags: lpLock.flags,
+                ageFlags: tokenAge.flags,
+                marketFlags: birdeye.marketRisk.flags,
+                reputationFlags: walletIntel.reputation?.flags,
+            });
 
-            const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated
-                && marketScore < 30 && reputationScore < 30;
-
-            const verdict = finalScore === 0 ? 'SAFE'
-                : finalScore <= 15 ? 'CAUTION'
-                : finalScore <= 50 ? 'HIGH_RISK'
-                : 'CRITICAL';
-
-            const summaryParts: string[] = [];
-            if (!safety.safe) summaryParts.push(safety.reason);
-            if (honeypot.isHoneypot) summaryParts.push('Honeypot detected');
-            if (holders.concentrated) summaryParts.push(holders.reason);
-            if (birdeye.marketRisk.flags.length > 0) {
-                summaryParts.push(`Market flags: ${birdeye.marketRisk.flags.join(', ')}`);
-            }
-            if (walletIntel.reputation && walletIntel.reputation.flags.length > 0) {
-                summaryParts.push(`Reputation: ${walletIntel.reputation.flags.join(', ')}`);
+            // Deployer recon — use poolCreator from LP lock if available
+            let deployerRecon: DeployerDossier | null = null;
+            const deployerAddr = lpLock.poolCreator ?? null;
+            if (deployerAddr) {
+                const cachedRecon = reconCache.get(deployerAddr);
+                if (cachedRecon) {
+                    deployerRecon = cachedRecon;
+                } else {
+                    try {
+                        deployerRecon = await reconDeployer(deployerAddr);
+                        reconCache.set(deployerAddr, deployerRecon);
+                    } catch { /* non-fatal — recon is best-effort enrichment */ }
+                }
             }
 
             const result: FullScanResult = {
                 safety,
                 honeypot,
                 holders,
+                lpLock,
+                tokenAge,
                 birdeye,
                 walletIntel,
+                deployerRecon,
                 combined: {
-                    safe: combinedSafe,
+                    safe: composite.safe,
                     riskScore: onChainScore,
-                    marketRiskScore: marketScore,
+                    marketRiskScore: birdeye.marketRisk.score,
                     reputationScore,
-                    finalScore,
-                    verdict,
-                    summary: combinedSafe ? 'All checks passed — token appears safe' : summaryParts.join('; '),
+                    finalScore: composite.finalScore,
+                    verdict: composite.verdict,
+                    summary,
+                    breakdown: composite.breakdown,
                 },
             };
 
@@ -639,12 +694,14 @@ async function scanToken(){
             return;
         }
 
-        const [safety, honeypot, holders, birdeye, walletIntel] = await Promise.all([
+        const [safety, honeypot, holders, birdeye, walletIntel, lpLock, tokenAge] = await Promise.all([
             analyzeTokenSafety(connection, mint),
             checkHoneypot(mint),
             analyzeHolders(connection, mint),
             enrichWithBirdeye(mint, BIRDEYE_API_KEY),
             enrichCreatorReputation(mint, HELIUS_API_KEY),
+            analyzeLpLock(connection, mint),
+            analyzeTokenAge(connection, mint),
         ]);
 
         let onChainScore = safety.riskScore;
@@ -652,45 +709,137 @@ async function scanToken(){
         if (holders.concentrated) onChainScore = Math.min(onChainScore + 15, 100);
 
         const reputationScore = walletIntel.reputation?.riskScore ?? 0;
-        const marketScore = birdeye.marketRisk.score;
-        const finalScore = Math.round(
-            onChainScore * 0.60 +
-            marketScore * 0.25 +
-            reputationScore * 0.15
+        const layers = buildFullLayers(
+            onChainScore, lpLock.riskScore, tokenAge.riskScore,
+            birdeye.marketRisk.score, reputationScore,
         );
-        const combinedSafe = safety.safe && !honeypot.isHoneypot && !holders.concentrated
-            && marketScore < 30 && reputationScore < 30;
+        const composite = computeCompositeScore(layers, DEFAULT_WEIGHTS);
+        const summary = buildSummary(composite, {
+            safetyReason: !safety.safe ? safety.reason : undefined,
+            honeypotDetected: honeypot.isHoneypot,
+            holderReason: holders.concentrated ? holders.reason : undefined,
+            lpFlags: lpLock.flags,
+            ageFlags: tokenAge.flags,
+            marketFlags: birdeye.marketRisk.flags,
+            reputationFlags: walletIntel.reputation?.flags,
+        });
 
-        const verdict = finalScore === 0 ? 'SAFE'
-            : finalScore <= 15 ? 'CAUTION'
-            : finalScore <= 50 ? 'HIGH_RISK'
-            : 'CRITICAL';
+        // Deployer recon — use poolCreator from LP lock if available
+        let deployerRecon: DeployerDossier | null = null;
+        const deployerAddr = lpLock.poolCreator ?? null;
+        if (deployerAddr) {
+            const cachedRecon = reconCache.get(deployerAddr);
+            if (cachedRecon) {
+                deployerRecon = cachedRecon;
+            } else {
+                try {
+                    deployerRecon = await reconDeployer(deployerAddr);
+                    reconCache.set(deployerAddr, deployerRecon);
+                } catch { /* non-fatal */ }
+            }
+        }
 
         const result: FullScanResult = {
             safety,
             honeypot,
             holders,
+            lpLock,
+            tokenAge,
             birdeye,
             walletIntel,
+            deployerRecon,
             combined: {
-                safe: combinedSafe,
+                safe: composite.safe,
                 riskScore: onChainScore,
-                marketRiskScore: marketScore,
+                marketRiskScore: birdeye.marketRisk.score,
                 reputationScore,
-                finalScore,
-                verdict,
-                summary: combinedSafe ? 'All checks passed — token appears safe' : [
-                    !safety.safe ? safety.reason : '',
-                    honeypot.isHoneypot ? 'Honeypot detected' : '',
-                    holders.concentrated ? holders.reason : '',
-                    birdeye.marketRisk.flags.length > 0 ? `Market: ${birdeye.marketRisk.flags.join(', ')}` : '',
-                    walletIntel.reputation?.flags.length ? `Reputation: ${walletIntel.reputation.flags.join(', ')}` : '',
-                ].filter(Boolean).join('; '),
+                finalScore: composite.finalScore,
+                verdict: composite.verdict,
+                summary,
+                breakdown: composite.breakdown,
             },
         };
 
         scanCache.set(mint, result);
         res.json({ ...result, cached: false });
+    });
+
+    // ── GET /v1/lp-lock/:mint — Standalone LP lock check ─────────────────────
+    app.get('/v1/lp-lock/:mint', async (req, res) => {
+        const { mint } = req.params;
+        if (!isValidMint(mint)) {
+            res.status(400).json({ error: 'Invalid mint address' });
+            return;
+        }
+        const cached = lpLockCache.get(mint);
+        if (cached) {
+            res.json({ ...cached, cached: true });
+            return;
+        }
+        const result = await analyzeLpLock(connection, mint);
+        lpLockCache.set(mint, result);
+        res.json({ ...result, cached: false });
+    });
+
+    // ── GET /v1/token-age/:mint — Standalone token age check ─────────────────
+    app.get('/v1/token-age/:mint', async (req, res) => {
+        const { mint } = req.params;
+        if (!isValidMint(mint)) {
+            res.status(400).json({ error: 'Invalid mint address' });
+            return;
+        }
+        const cached = tokenAgeCache.get(mint);
+        if (cached) {
+            res.json({ ...cached, cached: true });
+            return;
+        }
+        const result = await analyzeTokenAge(connection, mint);
+        tokenAgeCache.set(mint, result);
+        res.json({ ...result, cached: false });
+    });
+
+    // ── GET /v1/deployer/:address — Standalone deployer reconnaissance ───────
+    app.get('/v1/deployer/:address', async (req, res) => {
+        const { address } = req.params;
+        if (!isValidMint(address)) {
+            res.status(400).json({ error: 'Invalid wallet address' });
+            return;
+        }
+        const cached = reconCache.get(address);
+        if (cached) {
+            res.json({ ...cached, cached: true });
+            return;
+        }
+        try {
+            const dossier = await reconDeployer(address);
+            reconCache.set(address, dossier);
+            res.json({ ...dossier, cached: false });
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            res.status(500).json({ error: 'Deployer recon failed', message: msg });
+        }
+    });
+
+    // ── GET /v1/nft-check/:mint — NFT safety check (ME + DAS) ────────────
+    app.get('/v1/nft-check/:mint', async (req, res) => {
+        const { mint } = req.params;
+        if (!isValidMint(mint)) {
+            res.status(400).json({ error: 'Invalid mint address' });
+            return;
+        }
+        const cached = nftCache.get(mint);
+        if (cached) {
+            res.json({ ...cached, cached: true });
+            return;
+        }
+        try {
+            const result = await analyzeNft(mint);
+            nftCache.set(mint, result);
+            res.json({ ...result, cached: false });
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            res.status(500).json({ error: 'NFT analysis failed', message: msg });
+        }
     });
 
     return app;

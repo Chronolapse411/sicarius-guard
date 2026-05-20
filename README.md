@@ -1,6 +1,6 @@
 # 🛡️ SicariusGuard
 
-**Solana Token Safety Oracle for AI Agents & Trading Bots**
+**Solana Token & NFT Safety Oracle for AI Agents & Trading Bots**
 
 [![GitHub stars](https://img.shields.io/github/stars/Chronolapse411/sicarius-guard?style=social)](https://github.com/Chronolapse411/sicarius-guard)
 [![npm version](https://img.shields.io/npm/v/sicarius-guard.svg)](https://www.npmjs.com/package/sicarius-guard)
@@ -11,7 +11,7 @@
 [![Score](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard/badges/score.svg)](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard)
 [![Smithery](https://smithery.ai/badge/sicarius-guard)](https://smithery.ai/server/chronolapse411/sicarius-guard)
 
-Real-time token safety analysis combining byte-level on-chain inspection, market intelligence, and wallet reputation scoring. Built for autonomous AI agents, MCP-enabled LLMs, and trading infrastructure.
+Real-time token and NFT safety analysis combining byte-level on-chain inspection, LP lock verification, deployer reputation scoring, market intelligence, and NFT fraud detection. Built for autonomous AI agents, MCP-enabled LLMs, and trading infrastructure.
 
 > *"Don't trade blind. Query SicariusGuard before every swap."*
 
@@ -41,8 +41,9 @@ curl https://sicarius-guard-640545264957.us-east4.run.app/v1/scan/DezXAZ8z7PnrnR
 
 ## 🔍 What It Does
 
-SicariusGuard performs **7 layers of safety analysis** on any Solana SPL token:
+SicariusGuard performs **12 layers of safety analysis** on any Solana SPL token or NFT:
 
+### On-Chain Safety (Layers 1-5)
 | Layer | Source | Detection |
 |-------|--------|-----------|
 | 🔓 **Mint Authority** | Raw SPL mint bytes | Can deployer print infinite tokens? |
@@ -50,13 +51,26 @@ SicariusGuard performs **7 layers of safety analysis** on any Solana SPL token:
 | ⚠️ **Token-2022 Extensions** | Extension type scan | PermanentDelegate, TransferHook, ConfidentialTransfers |
 | 🍯 **Honeypot Detection** | Jupiter sell simulation | Can you actually sell this token? |
 | 📊 **Holder Concentration** | `getTokenLargestAccounts` | Top 5 wallets controlling >50% supply? |
-| 📈 **Market Intelligence** | Birdeye API | Liquidity, volume, wash trading, manipulation |
-| 🔎 **Wallet Reputation** | Helius Identity + Funded-By | Is the deployer wallet a known scammer? |
 
-### Weighted Risk Scoring (60/25/15 Model)
+### LP & Token Maturity (Layers 6-8)
+| Layer | Source | Detection |
+|-------|--------|-----------|
+| 🔒 **LP Lock/Burn** | Raydium V4 byte decode + GeckoTerminal | Is liquidity locked, burned, or unlocked? |
+| ⏰ **Token Age** | Helius enhanced RPC | Newborn (<24h)? Young (<7d)? Mature? |
+| ⚖️ **Unified Scoring** | 5-axis weighted engine | Combined risk across all layers |
+
+### Intelligence & Reputation (Layers 9-12)
+| Layer | Source | Detection |
+|-------|--------|-----------|
+| 📈 **Market Intel** | Birdeye API | Liquidity, volume, wash trading, manipulation |
+| 🔎 **Wallet Reputation** | Helius Identity + Funded-By | Is the deployer a known scammer? |
+| 🕵️ **Deployer Recon** | DAS + Enhanced TX | Serial rugger? Burner wallet? Dead token history? |
+| 🖼️ **NFT Intelligence** | Helius DAS + Magic Eden | Counterfeit collection? Unverified creators? Pricing anomaly? |
+
+### 5-Axis Weighted Risk Scoring
 
 ```
-finalScore = (onChainRisk × 0.60) + (marketRisk × 0.25) + (reputationRisk × 0.15)
+finalScore = (onChain × 0.45) + (lpLock × 0.15) + (age × 0.05) + (market × 0.22) + (reputation × 0.13)
 
 0       → SAFE
 1-15    → CAUTION
@@ -66,9 +80,11 @@ finalScore = (onChainRisk × 0.60) + (marketRisk × 0.25) + (reputationRisk × 0
 
 | Weight | Source | What It Catches |
 |--------|--------|----------------|
-| **60%** | On-chain safety | Mint/freeze authority, honeypots, extensions |
-| **25%** | Birdeye market data | Low liquidity, wash trading, price manipulation |
-| **15%** | Helius wallet intel | Scammer wallets, suspicious funding chains |
+| **45%** | On-chain safety | Mint/freeze authority, honeypots, extensions, supply |
+| **15%** | LP lock analysis | Unlocked liquidity, unburned LP tokens, lock duration |
+| **5%** | Token age | Newborn tokens (<24h), recently deployed |
+| **22%** | Birdeye market data | Low liquidity, wash trading, price manipulation |
+| **13%** | Helius wallet intel | Scammer wallets, suspicious funding chains, burner deployers |
 
 ## 🚀 Quick Start
 
@@ -97,13 +113,16 @@ npm start
 |--------|----------|-------------|
 | `POST` | `/v1/check` | Full on-chain safety analysis |
 | `GET` | `/v1/check/:mint` | Convenience GET for safety check |
-| `POST` | `/v1/scan` | Full analysis + Birdeye + Helius wallet intel |
+| `POST` | `/v1/scan` | Full 12-layer analysis + Birdeye + Helius + deployer recon |
 | `GET` | `/v1/scan/:mint` | Convenience GET for enriched scan |
 | `POST` | `/v1/honeypot` | Honeypot-only check (Jupiter sell sim) |
 | `POST` | `/v1/holders` | Holder concentration analysis |
+| `GET` | `/v1/lp-lock/:mint` | LP lock/burn status for a token |
+| `GET` | `/v1/token-age/:mint` | Token creation date and age category |
+| `GET` | `/v1/deployer/:address` | Deployer reconnaissance dossier |
+| `GET` | `/v1/nft-check/:mint` | NFT safety analysis (Magic Eden + Helius DAS) |
 | `GET` | `/v1/pricing` | x402 payment pricing table |
-| `GET` | `/x402/stats` | Payment verification stats |
-| `GET` | `/health` | Service health check |
+| `GET` | `/health` | Service health check with cache stats |
 
 ### Example Request
 
@@ -111,8 +130,17 @@ npm start
 # Basic safety check (BONK)
 curl https://sicarius-guard-640545264957.us-east4.run.app/v1/check/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
 
-# Full scan with Birdeye + Helius enrichment
+# Full 12-layer scan
 curl https://sicarius-guard-640545264957.us-east4.run.app/v1/scan/DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
+
+# LP lock check (POPCAT — 99.2% burned, 20,865 SOL liquidity)
+curl https://sicarius-guard-640545264957.us-east4.run.app/v1/lp-lock/7GCihgDB8fe6LNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr
+
+# NFT safety check (Mad Lads #7541)
+curl https://sicarius-guard-640545264957.us-east4.run.app/v1/nft-check/7zuR45WCsAsWsrqvYPyvLXFiCRKuvjh7HrMcNJ6F36Kd
+
+# Deployer recon (checks if a wallet is a serial scammer)
+curl https://sicarius-guard-640545264957.us-east4.run.app/v1/deployer/BGkkEeg4Gj8VcoerFb2RephZNkTEfHmzJBZMv4S7qVTQ
 ```
 
 ### Example Response (`/v1/scan`)
@@ -123,7 +151,6 @@ curl https://sicarius-guard-640545264957.us-east4.run.app/v1/scan/DezXAZ8z7PnrnR
     "safe": true,
     "riskScore": 0,
     "verdict": "SAFE",
-    "reason": "SAFE — mint/freeze revoked, no dangerous extensions, supply OK",
     "checks": {
       "mintAuthority": { "status": "REVOKED", "safe": true },
       "freezeAuthority": { "status": "REVOKED", "safe": true },
@@ -131,37 +158,26 @@ curl https://sicarius-guard-640545264957.us-east4.run.app/v1/scan/DezXAZ8z7PnrnR
       "supplyConcentration": { "status": "OK", "safe": true }
     }
   },
-  "honeypot": {
-    "isHoneypot": false,
-    "sellable": true,
-    "reason": "Sellable via Raydium → Quantum"
+  "honeypot": { "isHoneypot": false, "sellable": true },
+  "holders": { "concentrated": false, "stats": { "top10Pct": 8.2 } },
+  "lpLock": {
+    "status": "burned",
+    "burnPct": 99.2,
+    "liquiditySOL": 20865,
+    "poolCreatedAt": "2023-12-12T..."
   },
-  "holders": {
-    "concentrated": false,
-    "stats": { "top10Pct": 8.2 }
+  "tokenAge": {
+    "ageCategory": "mature",
+    "createdAt": "2022-12-08T...",
+    "ageDays": 1259
   },
-  "birdeye": {
-    "overview": {
-      "price": 0.0000075,
-      "liquidity": 3511099,
-      "marketCap": 631226030,
-      "holder": 999749
-    },
-    "marketRisk": { "verdict": "MARKET_SAFE", "flags": [] }
-  },
-  "walletIntel": {
-    "creatorAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
-    "reputation": {
-      "verdict": "TRUSTED",
-      "riskScore": 0,
-      "flags": []
-    }
+  "deployerRecon": {
+    "verdict": "CLEAN",
+    "recidivismScore": 0,
+    "portfolioSize": 1
   },
   "combined": {
     "safe": true,
-    "riskScore": 0,
-    "marketRiskScore": 0,
-    "reputationScore": 0,
     "finalScore": 0,
     "verdict": "SAFE",
     "summary": "All checks passed — token appears safe"
@@ -173,17 +189,21 @@ curl https://sicarius-guard-640545264957.us-east4.run.app/v1/scan/DezXAZ8z7PnrnR
 
 SicariusGuard exposes tools via the **Model Context Protocol (MCP)**, enabling LLMs and agent frameworks to call safety checks natively.
 
-### Available MCP Tools (7)
+### Available MCP Tools (11)
 
 | Tool | Description | Read-Only |
 |------|-------------|:---------:|
 | `check_token_safety` | 5-layer on-chain rug pull, honeypot, and holder analysis | ✅ |
 | `check_honeypot` | Jupiter DEX sell simulation — zero cost, quote-only | ✅ |
 | `check_holder_concentration` | Top holder distribution analysis with concentration flags | ✅ |
-| `full_token_scan` | 7-layer scan: on-chain + Birdeye market + Helius wallet reputation | ✅ |
+| `check_lp_lock` | LP lock/burn status — Raydium V4 byte decode + burn detection | ✅ |
+| `check_token_age` | Token creation date and age category via Helius RPC | ✅ |
+| `full_token_scan` | 12-layer scan: on-chain + LP + age + market + reputation + deployer | ✅ |
 | `get_wallet_reputation` | Helius DAS identity, funding chain, deployer age analysis | ✅ |
 | `get_market_intel` | Birdeye market data: price, volume, liquidity, risk flags | ✅ |
-| `batch_scan` | Parallel 7-layer scan of up to 10 tokens per call | ✅ |
+| `recon_deployer` | Deployer reconnaissance — portfolio health, serial scammer detection | ✅ |
+| `check_nft` | NFT safety analysis — collection verification, floor price, risk scoring | ✅ |
+| `batch_scan` | Parallel 12-layer scan of up to 10 tokens per call | ✅ |
 
 ### Install via npx (Recommended)
 
@@ -251,36 +271,35 @@ code --add-mcp '{"name":"sicarius-guard","command":"npx","args":["-y","sicarius-
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                       SicariusGuard                           │
+│                       SicariusGuard v1.1                      │
 │                                                              │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────┐ │
 │  │ REST API    │  │ MCP Server  │  │ x402 Payment Gate    │ │
-│  │ Express 5   │  │ stdio       │  │ SOL Micropayments    │ │
+│  │ Express 5   │  │ 11 tools    │  │ SOL Micropayments    │ │
+│  │ 12 endpts   │  │ stdio       │  │                      │ │
 │  └──────┬──────┘  └──────┬──────┘  └──────────┬───────────┘ │
 │         │                │                     │             │
 │  ┌──────▼────────────────▼─────────────────────▼───────────┐ │
-│  │                  Core Safety Engine                      │ │
+│  │               12-Layer Analysis Engine                   │ │
 │  │                                                          │ │
-│  │  ┌────────────┐ ┌──────────┐ ┌───────────────────────┐  │ │
-│  │  │ token_     │ │honeypot_ │ │ holder_               │  │ │
-│  │  │ safety.ts  │ │sim.ts    │ │ analysis.ts           │  │ │
-│  │  └────────────┘ └──────────┘ └───────────────────────┘  │ │
-│  │                                                          │ │
-│  │  ┌────────────────────┐  ┌────────────────────────────┐ │ │
-│  │  │ birdeye.ts         │  │ helius_wallet.ts           │ │ │
-│  │  │ Market Intelligence│  │ Wallet Reputation (15%)    │ │ │
-│  │  │ • Price/Volume     │  │ • Identity API             │ │ │
-│  │  │ • Liquidity        │  │ • Funded-By chain          │ │ │
-│  │  │ • Wash trading     │  │ • Scammer detection        │ │ │
-│  │  └────────────────────┘  └────────────────────────────┘ │ │
-│  └──────────────────────────────────────────────────────────┘ │
-│                         │                                     │
-│         ┌───────────────┼───────────────┐                    │
-│         ▼               ▼               ▼                    │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐           │
-│  │ Solana RPC  │ │ Birdeye API │ │ Helius DAS  │           │
-│  │ (Helius)    │ │ (Market)    │ │ (Wallet)    │           │
-│  └─────────────┘ └─────────────┘ └─────────────┘           │
+│  │  token_safety.ts   ┐                                    │ │
+│  │  honeypot_sim.ts   ├─ On-Chain (45%)                    │ │
+│  │  holder_analysis.ts┘                                    │ │
+│  │  lp_lock.ts          LP Lock  (15%)                     │ │
+│  │  token_age.ts        Age      (5%)                      │ │
+│  │  birdeye.ts          Market   (22%)                     │ │
+│  │  helius_wallet.ts    Rep      (13%)                     │ │
+│  │  scoring.ts          Unified 5-Axis Engine              │ │
+│  │  deployer_recon.ts   Deployer Reconnaissance            │ │
+│  │  nft_intel.ts        NFT Intelligence (ME + DAS)        │ │
+│  └──────────────────────────┬───────────────────────────────┘ │
+│                             │                                 │
+│     ┌───────────┬───────────┼───────────┬─────────────┐      │
+│     ▼           ▼           ▼           ▼             ▼      │
+│  ┌───────┐ ┌─────────┐ ┌────────┐ ┌──────────┐ ┌─────────┐ │
+│  │Solana │ │Birdeye  │ │Helius  │ │Magic Eden│ │Gecko    │ │
+│  │RPC    │ │API v3   │ │DAS+RPC │ │v2 (free) │ │Terminal │ │
+│  └───────┘ └─────────┘ └────────┘ └──────────┘ └─────────┘ │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -299,12 +318,13 @@ SicariusGuard implements the **x402 HTTP Payment Required** protocol for machine
 
 ### Pricing
 
-| Endpoint | Price (SOL) |
-|----------|------------|
-| `/v1/check` | 0.001 |
-| `/v1/scan` | 0.002 |
-| `/v1/honeypot` | 0.0005 |
-| `/v1/holders` | 0.0005 |
+| Endpoint | Price (SOL) | Description |
+|----------|------------|-------------|
+| `/v1/check` | 0.001 | On-chain safety check |
+| `/v1/scan` | 0.002 | Full 12-layer scan |
+| `/v1/honeypot` | 0.0005 | Honeypot simulation |
+| `/v1/holders` | 0.0005 | Holder analysis |
+| `/v1/nft-check` | 0.001 | NFT safety check |
 
 ### Example (Paid Request)
 
@@ -340,7 +360,7 @@ curl -X POST https://sicarius-guard-640545264957.us-east4.run.app/v1/scan \
 ## 🔧 Configuration
 
 | Variable | Description | Default |
-|----------|-------------|---------| 
+|----------|-------------|---------|
 | `HELIUS_RPC_URL` | Solana RPC endpoint (Helius recommended) | `https://api.mainnet-beta.solana.com` |
 | `PORT` | API server port | `3400` |
 | `HOST` | Bind address | `0.0.0.0` |
@@ -369,7 +389,9 @@ Tested with 50-token bulk scan on Solana mainnet:
 - **API:** Express 5
 - **MCP:** @modelcontextprotocol/sdk
 - **Market Data:** Birdeye API v3
+- **NFT Data:** Magic Eden v2 API (free tier)
 - **Wallet Intel:** Helius DAS / Identity / Funded-By APIs
+- **Pool Data:** GeckoTerminal API + Raydium V4 byte decode
 
 ## 🛡️ Why SicariusGuard?
 
@@ -380,8 +402,13 @@ Most token safety tools rely on third-party APIs that can be gamed. SicariusGuar
 | Byte-level SPL analysis | ✅ | ❌ | ❌ |
 | Token-2022 extension scanning | ✅ | ❌ | Partial |
 | Jupiter honeypot simulation | ✅ | ❌ | ❌ |
+| LP lock/burn detection | ✅ | ✅ | ❌ |
+| Raydium V4 byte decode | ✅ | ❌ | ❌ |
+| Token age analysis | ✅ | ❌ | ❌ |
+| Deployer serial scammer detection | ✅ | ❌ | ❌ |
+| NFT fraud detection | ✅ | ❌ | ❌ |
 | Helius wallet reputation | ✅ | ❌ | ❌ |
-| Weighted multi-source scoring | ✅ | ❌ | ❌ |
+| 12-layer weighted scoring | ✅ | ❌ | ❌ |
 | MCP server for AI agents | ✅ | ❌ | ❌ |
 | x402 pay-per-call (SOL) | ✅ | ❌ | ❌ |
 | Self-hosted (no vendor lock-in) | ✅ | ❌ | ❌ |
@@ -416,6 +443,6 @@ MIT — Built by [Chronolapse411](https://github.com/Chronolapse411)
 - **GitHub:** [github.com/Chronolapse411/sicarius-guard](https://github.com/Chronolapse411/sicarius-guard)
 - **Glama:** [glama.ai/mcp/servers/Chronolapse411/sicarius-guard](https://glama.ai/mcp/servers/Chronolapse411/sicarius-guard)
 - **Smithery:** [smithery.ai/server/chronolapse411/sicarius-guard](https://smithery.ai/server/chronolapse411/sicarius-guard)
-- **Dev.to:** [How I Built a 7-Layer Token Safety Oracle](https://dev.to/chronolapse411/how-i-built-a-7-layer-token-safety-oracle-for-ai-agents-on-solana-2p40)
+- **Dev.to:** [How I Built a 12-Layer Token Safety Oracle](https://dev.to/chronolapse411/how-i-built-a-7-layer-token-safety-oracle-for-ai-agents-on-solana-2p40)
 - **Twitter/X:** [@chronolapse411](https://x.com/chronolapse411)
 - **Author:** [@Chronolapse411](https://github.com/Chronolapse411)
